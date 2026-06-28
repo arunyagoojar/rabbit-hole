@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const azureEndpoint = env.VITE_AZURE_OPENAI_ENDPOINT
-  const azureFoundryBaseUrl = env.VITE_AZURE_FOUNDRY_BASE_URL || env.VITE_AZURE_OPENAI_BASE_URL
+  const azureFoundryBaseUrl = env.VITE_AZURE_FOUNDRY_BASE_URL || env.VITE_AZURE_OPENAI_BASE_URL || env.VITE_AZURE_FOUNDRY_PROJECT_ENDPOINT
 
   return {
     plugins: [react()],
@@ -14,6 +14,12 @@ export default defineConfig(({ mode }) => {
           target: 'https://generativelanguage.googleapis.com',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/gemini/, ''),
+          secure: true
+        },
+        '/api/pexels': {
+          target: 'https://api.pexels.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/pexels/, ''),
           secure: true
         },
         ...(azureEndpoint ? {

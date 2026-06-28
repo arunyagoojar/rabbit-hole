@@ -1,6 +1,8 @@
 name = "rabbit-hole"
+main = "worker/index.js"
 compatibility_date = "2026-06-28"
 
 [assets]
+binding = "ASSETS"
 directory = "./dist"
 not_found_handling = "single-page-application"

@@ -4,6 +4,7 @@
  */
 
 const PEXELS_API_KEY = import.meta.env.VITE_PEXELS_API_KEY || ''
+const PEXELS_API_BASE = '/api/pexels'
 
 // In-memory URL cache to avoid redundant API calls within the same session
 const urlCache = new Map()
@@ -39,7 +40,7 @@ function extractKeyword(title) {
  * Returns the URL string or null if unavailable.
  */
 export async function fetchPexelsImage(query) {
-  if (!PEXELS_API_KEY) return null
+  if (!isPexelsConfigured()) return null
 
   // Check in-memory cache
   const cacheKey = query.toLowerCase().trim()
@@ -51,8 +52,8 @@ export async function fetchPexelsImage(query) {
 
   try {
     const res = await fetch(
-      `https://api.pexels.com/v1/search?query=${encodeURIComponent(keyword)}&per_page=1&orientation=landscape`,
-      { headers: { Authorization: PEXELS_API_KEY } }
+      `${PEXELS_API_BASE}/v1/search?query=${encodeURIComponent(keyword)}&per_page=1&orientation=landscape`,
+      PEXELS_API_KEY ? { headers: { Authorization: PEXELS_API_KEY } } : undefined
     )
 
     if (!res.ok) {
@@ -80,5 +81,6 @@ export async function fetchPexelsImage(query) {
  * Check if Pexels API is configured.
  */
 export function isPexelsConfigured() {
+  if (!import.meta.env.DEV) return true
   return Boolean(PEXELS_API_KEY)
 }

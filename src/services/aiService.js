@@ -6,18 +6,12 @@ import { INTERESTS } from '../data/interests'
  */
 
 const MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
-const GEMINI_API_BASE = import.meta.env.DEV
-  ? '/api/gemini'
-  : 'https://generativelanguage.googleapis.com'
+const GEMINI_API_BASE = '/api/gemini'
 const AZURE_OPENAI_API_VERSION = import.meta.env.VITE_AZURE_OPENAI_API_VERSION || '2024-10-21'
-const AZURE_OPENAI_BASE = import.meta.env.DEV
-  ? '/api/azure-openai'
-  : trimTrailingSlash(import.meta.env.VITE_AZURE_OPENAI_ENDPOINT || '')
-const AZURE_FOUNDRY_BASE = import.meta.env.DEV
-  ? '/api/azure-foundry'
-  : trimTrailingSlash(getAzureFoundryBaseUrl())
+const AZURE_OPENAI_BASE = '/api/azure-openai'
+const AZURE_FOUNDRY_BASE = '/api/azure-foundry'
 const AI_PROVIDER = normalizeProvider(
-  import.meta.env.VITE_AI_PROVIDER || (hasAzureFoundryConfig() ? 'azure-foundry' : hasAzureConfig() ? 'azure' : 'gemini')
+  import.meta.env.VITE_AI_PROVIDER || getDefaultProvider()
 )
 const APP_INTEREST_NAMES = INTERESTS.map(interest => interest.name)
 
@@ -34,7 +28,7 @@ function getAzureDeployment() {
 }
 
 function getAzureFoundryBaseUrl() {
-  return import.meta.env.VITE_AZURE_FOUNDRY_BASE_URL || import.meta.env.VITE_AZURE_OPENAI_BASE_URL || ''
+  return import.meta.env.VITE_AZURE_FOUNDRY_BASE_URL || import.meta.env.VITE_AZURE_OPENAI_BASE_URL || import.meta.env.VITE_AZURE_FOUNDRY_PROJECT_ENDPOINT || ''
 }
 
 function getAzureFoundryApiKey() {
@@ -46,6 +40,8 @@ function getAzureFoundryModel() {
 }
 
 function hasAzureConfig() {
+  if (!import.meta.env.DEV) return true
+
   return Boolean(
     import.meta.env.VITE_AZURE_OPENAI_ENDPOINT &&
     import.meta.env.VITE_AZURE_OPENAI_API_KEY &&
@@ -54,6 +50,8 @@ function hasAzureConfig() {
 }
 
 function hasAzureFoundryConfig() {
+  if (!import.meta.env.DEV) return true
+
   return Boolean(
     getAzureFoundryBaseUrl() &&
     getAzureFoundryApiKey() &&
@@ -84,7 +82,7 @@ async function chatCompletion(messages, { temperature = 0.7, maxTokens, response
 
 async function geminiChatCompletion(messages, { temperature = 0.7, maxTokens, responseSchema } = {}) {
   const key = getGeminiApiKey()
-  if (!key) {
+  if (!key && import.meta.env.DEV) {
     throw new Error('VITE_GEMINI_API_KEY is not set')
   }
 
@@ -106,7 +104,8 @@ async function geminiChatCompletion(messages, { temperature = 0.7, maxTokens, re
   let lastError = null
 
   for (const model of MODEL_CANDIDATES) {
-    const targetUrl = `${GEMINI_API_BASE}/v1beta/models/${model}:generateContent?key=${key}`
+    const keyParam = key ? `?key=${encodeURIComponent(key)}` : ''
+    const targetUrl = `${GEMINI_API_BASE}/v1beta/models/${model}:generateContent${keyParam}`
     let res
     try {
       res = await fetch(targetUrl, {
@@ -160,6 +159,7 @@ async function azureChatCompletion(messages, { temperature = 0.7, maxTokens, res
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-rh-azure-openai-endpoint': import.meta.env.VITE_AZURE_OPENAI_ENDPOINT || '',
       'api-key': key
     },
     body: JSON.stringify(body)
@@ -229,7 +229,9 @@ async function azureFoundryChatCompletion(messages, { temperature = 0.7, maxToke
 
 function requestAzureFoundry(targetUrl, key, body, authMode) {
   const headers = {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'x-rh-azure-foundry-base-url': getAzureFoundryBaseUrl(),
+    'x-rh-azure-foundry-model': getAzureFoundryModel()
   }
 
   if (authMode === 'bearer') {
@@ -255,6 +257,13 @@ function normalizeProvider(provider) {
   const value = String(provider || '').toLowerCase().replace(/_/g, '-')
   if (value === 'azure-foundry' || value === 'foundry') return 'azure-foundry'
   if (value === 'azure-openai' || value === 'azure') return 'azure'
+  return 'gemini'
+}
+
+function getDefaultProvider() {
+  if (!import.meta.env.DEV) return 'azure-foundry'
+  if (hasAzureFoundryConfig()) return 'azure-foundry'
+  if (hasAzureConfig()) return 'azure'
   return 'gemini'
 }
 
@@ -666,6 +675,7 @@ function topicsSchema() {
  * Check if the API key is configured
  */
 export function isAIConfigured() {
+  if (!import.meta.env.DEV) return true
   if (AI_PROVIDER === 'azure-foundry') return hasAzureFoundryConfig()
   if (AI_PROVIDER === 'azure') return hasAzureConfig()
   return !!getGeminiApiKey()
