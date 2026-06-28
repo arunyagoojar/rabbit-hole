@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
-import { auth, db, googleProvider, signInWithPopup, signOut } from '../firebase'
+import { auth, db, googleProvider, isFirebaseConfigured, signInWithPopup, signOut } from '../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, onSnapshot, getDoc, arrayUnion, arrayRemove } from 'firebase/firestore'
 import { TOPICS } from '../data/topics'
@@ -117,9 +117,19 @@ export function AuthProvider({ children }) {
 
   // Listen to Auth State
   useEffect(() => {
+    if (!isFirebaseConfigured) {
+      setUser(null)
+      setDbData(null)
+      setLoading(false)
+      return
+    }
+
     let unsubscribeSnapshot = () => {}
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+    let unsubscribeAuth = () => {}
+
+    try {
+      unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser)
 
       if (currentUser) {
@@ -269,7 +279,18 @@ export function AuthProvider({ children }) {
         setDbData(null)
         setLoading(false)
       }
-    })
+      }, (err) => {
+        console.error("Firebase auth listener failed:", err)
+        setUser(null)
+        setDbData(null)
+        setLoading(false)
+      })
+    } catch (err) {
+      console.error("Firebase auth listener failed:", err)
+      setUser(null)
+      setDbData(null)
+      setLoading(false)
+    }
 
     return () => {
       unsubscribeAuth()
@@ -279,6 +300,10 @@ export function AuthProvider({ children }) {
 
   // Google Login helper
   const loginWithGoogle = useCallback(async () => {
+    if (!isFirebaseConfigured) {
+      throw new Error('Firebase authentication is not configured')
+    }
+
     try {
       setLoading(true)
       await signInWithPopup(auth, googleProvider)
@@ -292,6 +317,12 @@ export function AuthProvider({ children }) {
 
   // Sign out helper
   const logout = useCallback(async () => {
+    if (!isFirebaseConfigured) {
+      setUser(null)
+      setDbData(null)
+      return
+    }
+
     try {
       setLoading(true)
       await signOut(auth)
@@ -313,7 +344,7 @@ export function AuthProvider({ children }) {
 
     updateLocalData(prev => ({ ...prev, savedIds: nextSaved }))
 
-    if (user) {
+    if (user && db) {
       const userRef = doc(db, 'users', user.uid)
       try {
         await setDoc(userRef, {
@@ -329,7 +360,7 @@ export function AuthProvider({ children }) {
     updateLocalData(prev => ({ ...prev, interests, onboarded: true }))
     onboardedRef.current = true
 
-    if (user) {
+    if (user && db) {
       const userRef = doc(db, 'users', user.uid)
       try {
         await setDoc(userRef, { interests, onboarded: true }, { merge: true })
@@ -343,7 +374,7 @@ export function AuthProvider({ children }) {
     onboardedRef.current = true
     updateLocalData(prev => ({ ...prev, onboarded: true }))
 
-    if (user) {
+    if (user && db) {
       const userRef = doc(db, 'users', user.uid)
       try {
         await setDoc(userRef, { onboarded: true }, { merge: true })
@@ -356,7 +387,7 @@ export function AuthProvider({ children }) {
   const toggleTheme = useCallback(async (newTheme) => {
     updateLocalData(prev => ({ ...prev, theme: newTheme }))
 
-    if (user) {
+    if (user && db) {
       const userRef = doc(db, 'users', user.uid)
       try {
         await setDoc(userRef, { theme: newTheme }, { merge: true })
@@ -411,7 +442,7 @@ export function AuthProvider({ children }) {
       }
     })
 
-    if (user) {
+    if (user && db) {
       const userRef = doc(db, 'users', user.uid)
       try {
         await setDoc(userRef, {

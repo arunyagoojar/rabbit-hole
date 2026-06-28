@@ -12,16 +12,41 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 }
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig)
+function hasUsableFirebaseConfig(config) {
+  return Boolean(
+    config.apiKey &&
+    config.authDomain &&
+    config.projectId &&
+    config.appId &&
+    String(config.apiKey).startsWith('AIza')
+  )
+}
 
-// Initialize Services
-export const auth = getAuth(app)
-export const db = getFirestore(app)
+let app = null
+let auth = null
+let db = null
+let googleProvider = null
+let firebaseUnavailableReason = ''
 
-// Initialize Auth Providers
-export const googleProvider = new GoogleAuthProvider()
-googleProvider.setCustomParameters({ prompt: 'select_account' })
+if (hasUsableFirebaseConfig(firebaseConfig)) {
+  try {
+    app = initializeApp(firebaseConfig)
+    auth = getAuth(app)
+    db = getFirestore(app)
+    googleProvider = new GoogleAuthProvider()
+    googleProvider.setCustomParameters({ prompt: 'select_account' })
+  } catch (err) {
+    firebaseUnavailableReason = err?.message || 'Firebase initialization failed'
+    console.error('Firebase is unavailable:', err)
+  }
+} else {
+  firebaseUnavailableReason = 'Firebase environment variables are missing or invalid'
+  console.warn(firebaseUnavailableReason)
+}
+
+export const isFirebaseConfigured = Boolean(app && auth && db && googleProvider)
+export const firebaseConfigError = firebaseUnavailableReason
+export { auth, db, googleProvider }
 
 export { signInWithPopup, signOut }
 export default app
