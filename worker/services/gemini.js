@@ -3,14 +3,12 @@
  * Handles direct integration with Google Gemini 2.5 / 2.0 Flash with JSON schemas.
  */
 
-const DEFAULT_MODEL = 'gemini-3.8-flash'
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite'
 const FALLBACK_MODELS = [
-  'gemini-3.7-flash',
+  'gemini-flash-lite-latest',
   'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-2.5-flash',
-  'gemini-flash-latest'
+  'gemini-3.8-flash',
+  'gemini-3.7-flash'
 ]
 
 export async function callGemini(env, messages, {
