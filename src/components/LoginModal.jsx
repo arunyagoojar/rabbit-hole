@@ -1,28 +1,90 @@
-import { X, Mail, ArrowRight, Sparkles } from 'lucide-react'
+import { X, Mail, ArrowRight, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useState } from 'react'
 
+function formatFirebaseError(err) {
+  if (!err) return 'Authentication failed.'
+  const code = err.code || ''
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'current domain'
+
+  switch (code) {
+    case 'auth/unauthorized-domain':
+      return `This domain (${currentHost}) is not authorized in Firebase Console. Add it in Firebase Console > Authentication > Settings > Authorized domains.`
+    case 'auth/operation-not-allowed':
+      return 'This sign-in provider is not enabled in Firebase Console (Authentication > Sign-in method).'
+    case 'auth/popup-blocked':
+      return 'The sign-in popup was blocked by your browser. Please allow popups or use the redirect option below.'
+    case 'auth/popup-closed-by-user':
+      return 'Sign-in popup was closed before completing.'
+    case 'auth/cancelled-popup-request':
+      return 'A sign-in request is already in progress.'
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+      return 'Invalid email or password. If you do not have an account yet, switch to "Create Account".'
+    case 'auth/email-already-in-use':
+      return 'An account with this email already exists. Please switch to "Sign In".'
+    case 'auth/weak-password':
+      return 'Password should be at least 6 characters long.'
+    case 'auth/invalid-email':
+      return 'Please enter a valid email address.'
+    case 'auth/network-request-failed':
+      return 'Network connection issue. Please check your internet connection.'
+    case 'auth/too-many-requests':
+      return 'Temporarily disabled due to repeated failed attempts. Please try again later or reset password.'
+    default:
+      return err.message || 'Authentication failed. Please check your details.'
+  }
+}
+
 export default function LoginModal({ isOpen, onClose }) {
-  const { loginWithGoogle, loginWithApple, loginWithEmail, signUpWithEmail } = useAuth()
+  const {
+    loginWithGoogle,
+    loginWithGoogleRedirect,
+    loginWithApple,
+    loginWithEmail,
+    signUpWithEmail,
+    resetPassword
+  } = useAuth()
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [authMode, setAuthMode] = useState('social') // 'social' | 'email-signin' | 'email-signup'
+  const [successMsg, setSuccessMsg] = useState(null)
+  const [authMode, setAuthMode] = useState('social') // 'social' | 'email-signin' | 'email-signup' | 'forgot-password'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [showRedirectOption, setShowRedirectOption] = useState(false)
 
   if (!isOpen) return null
 
   const handleGoogle = async () => {
     setLoading(true)
     setError(null)
+    setSuccessMsg(null)
+    setShowRedirectOption(false)
     try {
       await loginWithGoogle()
       onClose()
     } catch (err) {
-      console.error(err)
-      setError('Google Sign-In was cancelled or failed. Please try again.')
+      console.error('Google Sign-In failed:', err)
+      setError(formatFirebaseError(err))
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+        setShowRedirectOption(true)
+      }
     } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleGoogleRedirect = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      await loginWithGoogleRedirect()
+    } catch (err) {
+      console.error('Google Redirect failed:', err)
+      setError(formatFirebaseError(err))
       setLoading(false)
     }
   }
@@ -30,12 +92,13 @@ export default function LoginModal({ isOpen, onClose }) {
   const handleApple = async () => {
     setLoading(true)
     setError(null)
+    setSuccessMsg(null)
     try {
       await loginWithApple()
       onClose()
     } catch (err) {
-      console.error(err)
-      setError('Apple Sign-In configuration is pending in Firebase Console.')
+      console.error('Apple Sign-In failed:', err)
+      setError(formatFirebaseError(err))
     } finally {
       setLoading(false)
     }
@@ -43,13 +106,35 @@ export default function LoginModal({ isOpen, onClose }) {
 
   const handleEmailSubmit = async (e) => {
     e.preventDefault()
-    if (!email || !password) {
-      setError('Please fill in both email and password.')
+    if (!email) {
+      setError('Please provide your email address.')
+      return
+    }
+
+    if (authMode === 'forgot-password') {
+      setLoading(true)
+      setError(null)
+      setSuccessMsg(null)
+      try {
+        await resetPassword(email)
+        setSuccessMsg(`Password reset email sent to ${email}. Please check your inbox.`)
+      } catch (err) {
+        console.error('Password reset failed:', err)
+        setError(formatFirebaseError(err))
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
+    if (!password) {
+      setError('Please provide your password.')
       return
     }
 
     setLoading(true)
     setError(null)
+    setSuccessMsg(null)
     try {
       if (authMode === 'email-signup') {
         await signUpWithEmail(email, password, displayName)
@@ -58,13 +143,8 @@ export default function LoginModal({ isOpen, onClose }) {
       }
       onClose()
     } catch (err) {
-      console.error(err)
-      const msg = err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'
-        ? 'Invalid email or password.'
-        : err.code === 'auth/email-already-in-use'
-        ? 'An account with this email already exists. Try signing in.'
-        : err.message || 'Authentication failed. Please check your credentials.'
-      setError(msg)
+      console.error('Email authentication failed:', err)
+      setError(formatFirebaseError(err))
     } finally {
       setLoading(false)
     }
@@ -91,7 +171,28 @@ export default function LoginModal({ isOpen, onClose }) {
           </p>
         </div>
 
-        {error && <p className="login-modal-error" role="alert">{error}</p>}
+        {error && (
+          <div className="login-modal-error" role="alert">
+            {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="login-modal-success" role="status">
+            {successMsg}
+          </div>
+        )}
+
+        {showRedirectOption && (
+          <button
+            className="login-auth-btn"
+            onClick={handleGoogleRedirect}
+            style={{ marginBottom: '14px', background: 'var(--accent)', color: '#fff', border: 'none' }}
+          >
+            <span>Continue with Google (Redirect)</span>
+            <ArrowRight size={16} />
+          </button>
+        )}
 
         {authMode === 'social' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
@@ -131,7 +232,11 @@ export default function LoginModal({ isOpen, onClose }) {
             {/* Email Switcher */}
             <button
               className="login-auth-btn"
-              onClick={() => setAuthMode('email-signin')}
+              onClick={() => {
+                setError(null)
+                setSuccessMsg(null)
+                setAuthMode('email-signin')
+              }}
               disabled={loading}
             >
               <Mail size={18} />
@@ -142,23 +247,50 @@ export default function LoginModal({ isOpen, onClose }) {
 
         {authMode !== 'social' && (
           <form onSubmit={handleEmailSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+            {authMode !== 'forgot-password' && (
+              <div className="login-tab-group" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={authMode === 'email-signin'}
+                  className={`login-tab-btn ${authMode === 'email-signin' ? 'active' : ''}`}
+                  onClick={() => {
+                    setError(null)
+                    setSuccessMsg(null)
+                    setAuthMode('email-signin')
+                  }}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={authMode === 'email-signup'}
+                  className={`login-tab-btn ${authMode === 'email-signup' ? 'active' : ''}`}
+                  onClick={() => {
+                    setError(null)
+                    setSuccessMsg(null)
+                    setAuthMode('email-signup')
+                  }}
+                >
+                  Create Account
+                </button>
+              </div>
+            )}
+
+            {authMode === 'forgot-password' && (
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 4px 0', textAlign: 'left' }}>
+                Enter your email address and we will send you a link to reset your password.
+              </p>
+            )}
+
             {authMode === 'email-signup' && (
               <input
                 type="text"
                 placeholder="Your Name (Optional)"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid var(--border)',
-                  background: 'var(--surface)',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'inherit',
-                  fontSize: '14px',
-                  boxSizing: 'border-box'
-                }}
+                className="login-modal-input"
               />
             )}
 
@@ -168,77 +300,94 @@ export default function LoginModal({ isOpen, onClose }) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                borderRadius: '10px',
-                border: '1px solid var(--border)',
-                background: 'var(--surface)',
-                color: 'var(--text-primary)',
-                fontFamily: 'inherit',
-                fontSize: '14px',
-                boxSizing: 'border-box'
-              }}
+              className="login-modal-input"
+              autoFocus
             />
 
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                borderRadius: '10px',
-                border: '1px solid var(--border)',
-                background: 'var(--surface)',
-                color: 'var(--text-primary)',
-                fontFamily: 'inherit',
-                fontSize: '14px',
-                boxSizing: 'border-box'
-              }}
-            />
+            {authMode !== 'forgot-password' && (
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                className="login-modal-input"
+              />
+            )}
 
             <button
               type="submit"
               className="login-auth-btn"
-              style={{ background: 'var(--text-primary)', color: 'var(--bg)', fontWeight: '600' }}
+              style={{ background: 'var(--text-primary)', color: 'var(--bg)', fontWeight: '600', marginTop: '4px' }}
               disabled={loading}
             >
               {loading ? (
                 <span className="spinner" />
               ) : (
                 <>
-                  <span>{authMode === 'email-signup' ? 'Create Account' : 'Sign In'}</span>
+                  <span>
+                    {authMode === 'email-signup'
+                      ? 'Create Account'
+                      : authMode === 'forgot-password'
+                      ? 'Send Reset Link'
+                      : 'Sign In'}
+                  </span>
                   <ArrowRight size={16} />
                 </>
               )}
             </button>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', fontSize: '13px' }}>
+              {authMode === 'email-signin' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null)
+                    setSuccessMsg(null)
+                    setAuthMode('forgot-password')
+                  }}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0 }}
+                >
+                  Forgot password?
+                </button>
+              ) : authMode === 'forgot-password' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null)
+                    setSuccessMsg(null)
+                    setAuthMode('email-signin')
+                  }}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0 }}
+                >
+                  Back to Sign In
+                </button>
+              ) : (
+                <span />
+              )}
+
               <button
                 type="button"
-                onClick={() => setAuthMode(authMode === 'email-signup' ? 'email-signin' : 'email-signup')}
+                onClick={() => {
+                  setError(null)
+                  setSuccessMsg(null)
+                  setShowRedirectOption(false)
+                  setAuthMode('social')
+                }}
                 style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0 }}
               >
-                {authMode === 'email-signup' ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthMode('social')}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0 }}
-              >
-                ← Back
+                ← Back to options
               </button>
             </div>
           </form>
         )}
 
-        <p className="login-modal-footer">
+        <p className="login-modal-footer" style={{ marginTop: '20px' }}>
           Your learning statistics are kept completely private.
         </p>
       </div>
     </div>
   )
 }
+

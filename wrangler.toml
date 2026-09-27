@@ -2,6 +2,9 @@ name = "rabbit-hole"
 main = "worker/index.js"
 compatibility_date = "2026-06-28"
 
+[vars]
+FIREBASE_PROJECT_ID = "rabbit-hole-944d3"
+
 [assets]
 binding = "ASSETS"
 directory = "./dist"

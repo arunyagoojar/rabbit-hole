@@ -3173,6 +3173,80 @@ body.light .login-auth-btn:hover {
   opacity: 0.8;
 }
 
+.login-tab-group {
+  display: flex;
+  background-color: var(--surface-hover, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px;
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+.login-tab-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.login-tab-btn.active {
+  background-color: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.login-modal-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.login-modal-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.login-modal-success {
+  font-size: 13px;
+  color: #34A853;
+  background-color: rgba(52, 168, 83, 0.1);
+  border: 1px solid rgba(52, 168, 83, 0.25);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.login-modal-error {
+  font-size: 13px;
+  color: #EA4335;
+  background-color: rgba(234, 67, 53, 0.1);
+  border: 1px solid rgba(234, 67, 53, 0.25);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  line-height: 1.4;
+}
+
 /* ─── Profile Menu in TopBar ─── */
 .top-bar-actions {
   display: flex;

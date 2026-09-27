@@ -5,9 +5,12 @@ import {
   appleProvider,
   isFirebaseConfigured,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   updateProfile
 } from '../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -148,13 +151,25 @@ export function AuthProvider({ children }) {
     }
   }, [updateLocalData])
 
-  // Listen to Firebase Auth state
+  // Listen to Firebase Auth state & process potential redirect sign-in
   useEffect(() => {
-    if (!isFirebaseConfigured) {
+    if (!isFirebaseConfigured || !auth) {
       setUser(null)
       setLoading(false)
       return
     }
+
+    // Check for pending redirect auth results first
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (result?.user) {
+          setUser(result.user)
+          await syncWithBackend(result.user)
+        }
+      })
+      .catch((err) => {
+        console.warn('Firebase redirect sign-in notice:', err?.message || err)
+      })
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser)
@@ -170,12 +185,13 @@ export function AuthProvider({ children }) {
   // ─── Authentication Helpers ───
 
   const loginWithGoogle = useCallback(async () => {
-    if (!isFirebaseConfigured) {
+    if (!isFirebaseConfigured || !auth || !googleProvider) {
       throw new Error('Firebase authentication is not configured')
     }
     try {
       setLoading(true)
       const res = await signInWithPopup(auth, googleProvider)
+      setUser(res.user)
       await syncWithBackend(res.user)
       setLoading(false)
       return res.user
@@ -186,6 +202,14 @@ export function AuthProvider({ children }) {
     }
   }, [syncWithBackend])
 
+  const loginWithGoogleRedirect = useCallback(async () => {
+    if (!isFirebaseConfigured || !auth || !googleProvider) {
+      throw new Error('Firebase authentication is not configured')
+    }
+    setLoading(true)
+    await signInWithRedirect(auth, googleProvider)
+  }, [])
+
   const loginWithApple = useCallback(async () => {
     if (!isFirebaseConfigured || !appleProvider) {
       throw new Error('Apple authentication is not configured')
@@ -193,6 +217,7 @@ export function AuthProvider({ children }) {
     try {
       setLoading(true)
       const res = await signInWithPopup(auth, appleProvider)
+      setUser(res.user)
       await syncWithBackend(res.user)
       setLoading(false)
       return res.user
@@ -204,12 +229,13 @@ export function AuthProvider({ children }) {
   }, [syncWithBackend])
 
   const loginWithEmail = useCallback(async (email, password) => {
-    if (!isFirebaseConfigured) {
+    if (!isFirebaseConfigured || !auth) {
       throw new Error('Firebase authentication is not configured')
     }
     try {
       setLoading(true)
       const res = await signInWithEmailAndPassword(auth, email, password)
+      setUser(res.user)
       await syncWithBackend(res.user)
       setLoading(false)
       return res.user
@@ -221,7 +247,7 @@ export function AuthProvider({ children }) {
   }, [syncWithBackend])
 
   const signUpWithEmail = useCallback(async (email, password, displayName) => {
-    if (!isFirebaseConfigured) {
+    if (!isFirebaseConfigured || !auth) {
       throw new Error('Firebase authentication is not configured')
     }
     try {
@@ -230,6 +256,7 @@ export function AuthProvider({ children }) {
       if (displayName && auth.currentUser) {
         await updateProfile(auth.currentUser, { displayName })
       }
+      setUser(res.user)
       await syncWithBackend(res.user)
       setLoading(false)
       return res.user
@@ -239,6 +266,13 @@ export function AuthProvider({ children }) {
       throw err
     }
   }, [syncWithBackend])
+
+  const resetPassword = useCallback(async (email) => {
+    if (!isFirebaseConfigured || !auth) {
+      throw new Error('Firebase authentication is not configured')
+    }
+    return sendPasswordResetEmail(auth, email)
+  }, [])
 
   const logout = useCallback(async () => {
     if (!isFirebaseConfigured) {
@@ -375,9 +409,11 @@ export function AuthProvider({ children }) {
       loading,
       isOnboarded,
       loginWithGoogle,
+      loginWithGoogleRedirect,
       loginWithApple,
       loginWithEmail,
       signUpWithEmail,
+      resetPassword,
       logout,
       toggleSaveTopic,
       updateInterests,
