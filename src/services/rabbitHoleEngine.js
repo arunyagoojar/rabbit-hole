@@ -368,6 +368,58 @@ export function getLastAudioErrorType() {
 }
 
 /**
+ * Synthesize speech using open-source Puter.js (AWS Polly / OpenAI backends).
+ * Bypasses Google AI Studio rate limits and quotas for keyless guest and user sessions.
+ */
+export async function getPuterAudioBuffer(text, audioCtx) {
+  if (typeof window === 'undefined') return null
+
+  // Await Puter script availability if currently initializing
+  if (!window.puter?.ai?.txt2speech) {
+    let waited = 0
+    while (!window.puter?.ai?.txt2speech && waited < 1200) {
+      await new Promise(r => setTimeout(r, 100))
+      waited += 100
+    }
+  }
+
+  if (!window.puter?.ai?.txt2speech) return null
+
+  try {
+    const clean = cleanSpokenText(text)
+    if (!clean) return null
+    const sliced = clean.slice(0, 1500)
+
+    // Puter txt2speech returns an HTMLAudioElement with a blob: URL
+    let audioEl = null
+    try {
+      audioEl = await window.puter.ai.txt2speech(sliced, {
+        engine: 'aws-polly',
+        voice: 'Joanna'
+      })
+    } catch {
+      try {
+        audioEl = await window.puter.ai.txt2speech(sliced)
+      } catch (fallbackErr) {
+        console.warn('Puter standard synthesis fallback:', fallbackErr?.message || fallbackErr)
+      }
+    }
+
+    if (!audioEl || !audioEl.src) return null
+
+    const res = await fetch(audioEl.src)
+    if (!res.ok) return null
+
+    const arrayBuffer = await res.arrayBuffer()
+    const decoded = await audioCtx.decodeAudioData(arrayBuffer.slice(0))
+    return decoded
+  } catch (err) {
+    console.warn('Puter TTS synthesis warning:', err?.message || err)
+    return null
+  }
+}
+
+/**
  * Synthesize or retrieve cached audio buffer for a queue item.
  * Uses deterministic caching and dual-mode PCM/WAV decoding.
  */
@@ -432,10 +484,13 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
           for (const m of models) {
             try {
               const directRes = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${k}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`,
                 {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': k
+                  },
                   body: JSON.stringify({
                     contents: [{ parts: [{ text: clean.slice(0, 2500) }] }],
                     generationConfig: {
@@ -517,6 +572,19 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
               }
             }
           }
+        }
+      }
+
+      // 4. Open-source Puter.js fallback for free neural speech without Google quota limits
+      if (!buffer) {
+        try {
+          const puterBuffer = await getPuterAudioBuffer(clean, audioCtx)
+          if (puterBuffer) {
+            buffer = puterBuffer
+            lastAudioErrorType = null
+          }
+        } catch (puterErr) {
+          console.warn('Puter TTS fallback notice:', puterErr?.message || puterErr)
         }
       }
 

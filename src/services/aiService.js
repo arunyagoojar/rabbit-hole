@@ -135,11 +135,15 @@ async function geminiChatCompletion(messages, { temperature = 0.7, maxTokens, re
       const targetUrl = `${GEMINI_API_BASE}/v1beta/models/${model}:generateContent${keyParam}`
       let res
       try {
+        const headers = {
+          'Content-Type': 'application/json'
+        }
+        if (key) {
+          headers['x-goog-api-key'] = key
+        }
         res = await fetch(targetUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          headers,
           body: JSON.stringify(body)
         })
       } catch (err) {

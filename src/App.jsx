@@ -283,6 +283,7 @@ function AppContent() {
                 const target = (topicParam && typeof topicParam === 'object' && topicParam.id) ? topicParam : audioTopic
                 setReadingTopic(target)
               }}
+              onOpenApiKey={() => setApiKeyModalOpen(true)}
             />
           )}
 

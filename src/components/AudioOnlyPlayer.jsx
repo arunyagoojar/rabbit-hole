@@ -66,7 +66,8 @@ function formatSubtitleCue(text) {
 export default function AudioOnlyPlayer({ 
   topic, 
   onClose, 
-  onSwitchToRead 
+  onSwitchToRead,
+  onOpenApiKey
 }) {
   const { userData, toggleSaveTopic, completeTopic } = useAuth()
   const isSaved = (userData?.savedIds || []).includes(topic?.id)
@@ -597,6 +598,15 @@ export default function AudioOnlyPlayer({
                     >
                       Try again
                     </button>
+                    {onOpenApiKey && (
+                      <button 
+                        className="audio-friendly-retry-btn"
+                        style={{ background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.2)', color: 'var(--text-secondary)' }}
+                        onClick={onOpenApiKey}
+                      >
+                        {userData?.geminiApiKey ? 'Check Key' : 'Add Google AI Key'}
+                      </button>
+                    )}
                     {onSwitchToRead && (
                       <button 
                         className="audio-friendly-retry-btn"
