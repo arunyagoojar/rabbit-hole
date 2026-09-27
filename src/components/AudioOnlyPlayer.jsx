@@ -79,6 +79,7 @@ export default function AudioOnlyPlayer({
   // Contextual Title Transition (Requirement 8, 30, 31)
   const [activeTitle, setActiveTitle] = useState(topic.title)
   const [isAnsweringQuestion, setIsAnsweringQuestion] = useState(false)
+  const [activeAnswerThread, setActiveAnswerThread] = useState(null)
 
   // Playback & UI State
   const [isPlaying, setIsPlaying] = useState(false)
@@ -422,6 +423,7 @@ export default function AudioOnlyPlayer({
       // 4. Begin generating answer immediately
       const { updatedCanonical, newThread } = await expandCanonicalThread(canonical, q)
       setCanonical(updatedCanonical)
+      setActiveAnswerThread(newThread)
 
       // 5. Build updated audio queue
       const newQueue = buildAudioQueue(updatedCanonical)
@@ -455,6 +457,18 @@ export default function AudioOnlyPlayer({
     return 'idle'
   }
 
+  const handleSwitchToReadMode = () => {
+    stopAudio()
+    const fullTopic = {
+      ...topic,
+      canonical: canonical || topic.canonical,
+      content: canonical?.sections ? canonical.sections.map(s => s.paragraphs.join('\n\n')) : topic.content
+    }
+    if (onSwitchToRead) {
+      onSwitchToRead(fullTopic)
+    }
+  }
+
   return (
     <div 
       className="audio-player-overlay" 
@@ -475,10 +489,7 @@ export default function AudioOnlyPlayer({
         <div className="audio-header-actions">
           <button 
             className="audio-switch-read-btn" 
-            onClick={() => {
-              stopAudio()
-              onSwitchToRead(topic)
-            }}
+            onClick={handleSwitchToReadMode}
             title="Switch to reading mode"
             aria-label="Switch to reading mode"
           >
@@ -590,7 +601,7 @@ export default function AudioOnlyPlayer({
                       <button 
                         className="audio-friendly-retry-btn"
                         style={{ background: 'rgba(232, 154, 69, 0.15)', borderColor: 'rgba(232, 154, 69, 0.4)', color: '#E89A45' }}
-                        onClick={onSwitchToRead}
+                        onClick={handleSwitchToReadMode}
                       >
                         Read answer
                       </button>
@@ -621,6 +632,55 @@ export default function AudioOnlyPlayer({
               )}
             </AnimatePresence>
           </div>
+
+          {/* Inline Curiosity Answer Card — Displays generated text even when voice hits daily quota */}
+          {activeAnswerThread && (
+            <motion.div 
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="audio-answer-card"
+            >
+              <div className="audio-answer-header">
+                <div className="audio-answer-badge">
+                  <Sparkles size={13} />
+                  <span>Curiosity Answer</span>
+                </div>
+                <button 
+                  className="audio-answer-read-mode-btn"
+                  onClick={handleSwitchToReadMode}
+                  title="Open in full reading mode"
+                >
+                  <BookOpen size={13} />
+                  <span>Open in Reader</span>
+                </button>
+              </div>
+
+              <div className="audio-answer-paragraphs">
+                {activeAnswerThread.paragraphs.map((p, idx) => (
+                  <p key={idx}>{p}</p>
+                ))}
+              </div>
+
+              {activeAnswerThread.prompts?.length > 0 && (
+                <div className="audio-followup-container">
+                  <span className="audio-followup-heading">Deeper Inquiries:</span>
+                  <div className="audio-followup-chips">
+                    {activeAnswerThread.prompts.map((prompt, pIdx) => (
+                      <button 
+                        key={pIdx}
+                        className="audio-followup-chip"
+                        onClick={() => handleQuestionSubmit(prompt)}
+                        disabled={audioState === 'thinking'}
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
 
           {/* Ask Something Action Button */}
           <div className="audio-ask-section">

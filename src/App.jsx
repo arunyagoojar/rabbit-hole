@@ -278,9 +278,10 @@ function AppContent() {
             <AudioOnlyPlayer
               topic={audioTopic}
               onClose={closeAudio}
-              onSwitchToRead={(topic) => {
+              onSwitchToRead={(topicParam) => {
                 setAudioTopic(null)
-                setReadingTopic(topic)
+                const target = (topicParam && typeof topicParam === 'object' && topicParam.id) ? topicParam : audioTopic
+                setReadingTopic(target)
               }}
             />
           )}
