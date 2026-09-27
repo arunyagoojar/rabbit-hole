@@ -20,7 +20,8 @@ import {
   getOrPrefetchAudioBuffer,
   prefetchAudioAhead,
   generateSubtitleCues, 
-  cleanSpokenText 
+  cleanSpokenText,
+  getLastAudioErrorType 
 } from '../services/rabbitHoleEngine'
 
 /**
@@ -240,7 +241,12 @@ export default function AudioOnlyPlayer({
       if (!buffer) {
         console.warn('Neural voice narration buffer is unavailable for item:', item.id)
         if (isPlayingRef.current) {
-          setPlaybackError('Neural voice narration could not be loaded. Please check your Google AI key in settings.')
+          const errType = getLastAudioErrorType()
+          if (errType === 'quota') {
+            setPlaybackError('Voice rate limit reached (Google AI free tier limit: 3/min, 10/day). You can read this answer or retry in a minute.')
+          } else {
+            setPlaybackError('Neural voice narration could not be loaded. Please check your Google AI key in settings.')
+          }
           setAudioState('error')
           stopAudio()
         }
@@ -573,12 +579,23 @@ export default function AudioOnlyPlayer({
                   className="audio-friendly-error"
                 >
                   <p>{playbackError}</p>
-                  <button 
-                    className="audio-friendly-retry-btn"
-                    onClick={handleToggleOrbPlay}
-                  >
-                    Try again
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '8px' }}>
+                    <button 
+                      className="audio-friendly-retry-btn"
+                      onClick={handleToggleOrbPlay}
+                    >
+                      Try again
+                    </button>
+                    {onSwitchToRead && (
+                      <button 
+                        className="audio-friendly-retry-btn"
+                        style={{ background: 'rgba(232, 154, 69, 0.15)', borderColor: 'rgba(232, 154, 69, 0.4)', color: '#E89A45' }}
+                        onClick={onSwitchToRead}
+                      >
+                        Read answer
+                      </button>
+                    )}
+                  </div>
                 </motion.div>
               ) : currentSubtitle && (isPlaying || audioState === 'speaking' || audioState === 'thinking' || audioState === 'connecting') ? (
                 <motion.p 

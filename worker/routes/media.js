@@ -4,10 +4,10 @@ import { recordUsage } from '../services/usage'
 
 export const mediaRoutes = new Hono()
 
-// Gemini 3.8 Text-to-Speech models (Fast & Ultra Fast) with fallbacks
+// Gemini 3.8 Text-to-Speech models with gemini-3.8-flash-lite-tts prioritized
 const GEMINI_TTS_MODELS = [
-  'gemini-3.8-flash-tts',
   'gemini-3.8-flash-lite-tts',
+  'gemini-3.8-flash-tts',
   'gemini-3.1-flash-tts-preview',
   'gemini-2.5-flash-preview-tts'
 ]
@@ -198,10 +198,10 @@ mediaRoutes.post('/narrate', optionalAuth(), async (c) => {
   let lastError = null
 
   const modelsToTry = [
-    'gemini-3.8-flash-tts',
     'gemini-3.8-flash-lite-tts',
-    'gemini-2.5-flash-preview-tts',
+    'gemini-3.8-flash-tts',
     'gemini-3.1-flash-tts-preview',
+    'gemini-2.5-flash-preview-tts',
     'gemini-2.5-flash'
   ]
 
@@ -262,11 +262,19 @@ mediaRoutes.post('/narrate', optionalAuth(), async (c) => {
   }
 
   if (!audioBase64) {
+    const isQuota = Boolean(
+      lastError?.message && (
+        lastError.message.includes('429') ||
+        lastError.message.includes('RESOURCE_EXHAUSTED') ||
+        lastError.message.includes('quota') ||
+        lastError.message.includes('rate-limit')
+      )
+    )
     return c.json({
-      error: 'Narration generation failed',
-      detail: lastError?.message,
-      fallbackToClientSpeech: true
-    }, 502)
+      error: isQuota ? 'quota_exceeded' : 'Narration generation failed',
+      detail: lastError?.message || 'TTS generation unavailable',
+      isQuota
+    }, isQuota ? 429 : 502)
   }
 
   try {

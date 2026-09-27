@@ -361,6 +361,12 @@ export function buildAudioQueue(canonical) {
   return queue
 }
 
+let lastAudioErrorType = null // 'quota' | 'key' | 'network' | null
+
+export function getLastAudioErrorType() {
+  return lastAudioErrorType
+}
+
 /**
  * Synthesize or retrieve cached audio buffer for a queue item.
  * Uses deterministic caching and dual-mode PCM/WAV decoding.
@@ -372,6 +378,7 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
 
   // 1. Check in-memory cache
   if (audioBufferCache.has(cacheKey)) {
+    lastAudioErrorType = null
     return audioBufferCache.get(cacheKey)
   }
 
@@ -395,7 +402,10 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
         if (res?.audioBase64) audioBase64 = res.audioBase64
         else if (res?.audioUrl) audioUrl = res.audioUrl
       } catch (err) {
-        console.warn('Worker narration prefetch warning:', err?.message)
+        console.warn('Worker narration prefetch notice:', err?.message)
+        if (err?.message?.includes('429') || err?.message?.includes('quota') || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+          lastAudioErrorType = 'quota'
+        }
       }
 
       // Direct client fallback
@@ -412,10 +422,10 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
           import.meta.env.VITE_GEMINI_API_KEY_SECONDARY
         ].filter(k => Boolean(k) && k.trim().length > 10)
         const models = [
-          'gemini-3.8-flash-tts',
           'gemini-3.8-flash-lite-tts',
-          'gemini-2.5-flash-preview-tts',
+          'gemini-3.8-flash-tts',
           'gemini-3.1-flash-tts-preview',
+          'gemini-2.5-flash-preview-tts',
           'gemini-2.5-flash'
         ]
         for (const k of keys) {
@@ -440,10 +450,17 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
                 const data = directJson?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
                 if (data) {
                   audioBase64 = data
+                  lastAudioErrorType = null
                   break
                 }
+              } else if (directRes.status === 429) {
+                lastAudioErrorType = 'quota'
               }
-            } catch {}
+            } catch (err) {
+              if (err?.message?.includes('429') || err?.message?.includes('quota')) {
+                lastAudioErrorType = 'quota'
+              }
+            }
           }
           if (audioBase64) break
         }
@@ -520,30 +537,26 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
 }
 
 /**
- * Eagerly prefetch Section N+1 and Section N+2 in background.
- * Non-blocking: Catch and schedule retry on failure without interrupting active audio.
+ * Controlled single-item lookahead.
+ * Strictly respects Google AI Studio's 3 RPM and 10 requests/day quota:
+ * Never fires multiple concurrent requests, and only fetches the immediate next item after active speech is well underway.
  */
+let lookaheadTimer = null
+
 export function prefetchAudioAhead(queue, currentIndex, topicId, audioCtx) {
+  if (lookaheadTimer) {
+    clearTimeout(lookaheadTimer)
+    lookaheadTimer = null
+  }
   if (!queue || !Array.isArray(queue) || !audioCtx) return
 
-  // Prefetch immediate next item
   const nextItem = queue[currentIndex + 1]
-  if (nextItem) {
-    getOrPrefetchAudioBuffer(nextItem, topicId, audioCtx).catch(err => {
-      console.warn(`Retry scheduled for audio chunk ${currentIndex + 1}:`, err?.message)
-      setTimeout(() => {
-        getOrPrefetchAudioBuffer(nextItem, topicId, audioCtx).catch(() => {})
-      }, 1200)
-    })
-  }
+  if (!nextItem || nextItem.id === 'queue-next-questions') return
 
-  // Prefetch N+2 buffer ahead
-  const lookaheadItem = queue[currentIndex + 2]
-  if (lookaheadItem) {
-    setTimeout(() => {
-      getOrPrefetchAudioBuffer(lookaheadItem, topicId, audioCtx).catch(() => {})
-    }, 600)
-  }
+  // Defer lookahead request by 12 seconds so the current speech has full quota priority
+  lookaheadTimer = setTimeout(() => {
+    getOrPrefetchAudioBuffer(nextItem, topicId, audioCtx).catch(() => {})
+  }, 12000)
 }
 
 /**
