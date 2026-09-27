@@ -140,9 +140,21 @@ mediaRoutes.post('/narrate', optionalAuth(), async (c) => {
     return c.json({ error: 'text is required for narration' }, 400)
   }
 
+  const user = c.get('user')
   const bucket = c.env.MEDIA_BUCKET
   const db = c.env.DB
+
+  const incomingUserKey = c.req.header('x-gemini-api-key')
+  let userApiKey = incomingUserKey && incomingUserKey.trim().length > 10 ? incomingUserKey.trim() : null
+  if (!userApiKey && user?.uid && db) {
+    try {
+      const userRow = await db.prepare('SELECT gemini_api_key FROM users WHERE id = ?').bind(user.uid).first()
+      if (userRow?.gemini_api_key) userApiKey = userRow.gemini_api_key
+    } catch {}
+  }
+
   const keysToTry = [
+    userApiKey,
     c.env.GEMINI_API_KEY_PRIMARY,
     c.env.GEMINI_API_KEY,
     c.env.VITE_GEMINI_API_KEY,
@@ -150,7 +162,7 @@ mediaRoutes.post('/narrate', optionalAuth(), async (c) => {
   ].filter((key, idx, arr) => Boolean(key) && arr.indexOf(key) === idx)
 
   if (keysToTry.length === 0) {
-    return c.json({ error: 'GEMINI_API_KEY is not configured in Cloudflare environment' }, 500)
+    return c.json({ error: 'Gemini API key is required for voice narration. Please add your key in onboarding or settings.' }, 400)
   }
 
   const cleanText = text.replace(/<[^>]*>/g, '').trim().slice(0, 3000)
@@ -186,10 +198,9 @@ mediaRoutes.post('/narrate', optionalAuth(), async (c) => {
   let lastError = null
 
   const modelsToTry = [
-    'gemini-2.5-flash-preview-tts',
-    'gemini-3.8-flash-lite-tts',
-    'gemini-3.8-flash-tts',
-    'gemini-3.1-flash-tts-preview'
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-2.5-flash-preview-tts'
   ]
 
   // Ensure voice is one of Gemini's prebuilt voices: Aoede, Puck, Charon, Kore, Fenrir

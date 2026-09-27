@@ -54,7 +54,8 @@ function readLocalStorage() {
       streak: Number(localStorage.getItem('rh-streak') || '0'),
       lastReadDate: localStorage.getItem('rh-last-read') || '',
       readHistory: JSON.parse(localStorage.getItem('rh-history') || '{}'),
-      schemaVersion: Number(localStorage.getItem('rh-schema-version') || '0')
+      schemaVersion: Number(localStorage.getItem('rh-schema-version') || '0'),
+      geminiApiKey: localStorage.getItem('rh-gemini-api-key') || ''
     }
 
     if (local.schemaVersion < 2) {
@@ -75,7 +76,8 @@ function readLocalStorage() {
       streak: 0,
       lastReadDate: '',
       readHistory: {},
-      schemaVersion: 2
+      schemaVersion: 2,
+      geminiApiKey: ''
     }
   }
 }
@@ -89,6 +91,9 @@ function writeLocalStorage(data) {
   localStorage.setItem('rh-history', JSON.stringify(data.readHistory || {}))
   localStorage.setItem('rh-schema-version', String(data.schemaVersion || 2))
   localStorage.setItem('rh-onboarded', data.onboarded ? '1' : '0')
+  if (data.geminiApiKey !== undefined) {
+    localStorage.setItem('rh-gemini-api-key', data.geminiApiKey || '')
+  }
 }
 
 export function AuthProvider({ children }) {
@@ -132,6 +137,7 @@ export function AuthProvider({ children }) {
         const mergedSaved = Array.from(new Set([...(backendUser?.savedIds || []), ...prev.savedIds]))
         const mergedHistory = { ...(backendHistory || {}), ...(prev.readHistory || {}) }
         const mergedStreak = Math.max(d1Streak || 0, prev.streak || 0)
+        const mergedApiKey = backendUser?.geminiApiKey || backendUser?.gemini_api_key || prev.geminiApiKey || ''
 
         const next = {
           ...prev,
@@ -139,6 +145,7 @@ export function AuthProvider({ children }) {
           savedIds: mergedSaved,
           theme: backendUser?.theme || prev.theme,
           onboarded: backendUser?.onboarded === true || prev.onboarded,
+          geminiApiKey: mergedApiKey,
           streak: mergedStreak,
           lastReadDate: d1LastRead || prev.lastReadDate,
           readHistory: mergedHistory
@@ -336,6 +343,22 @@ export function AuthProvider({ children }) {
     }
   }, [user, updateLocalData])
 
+  const updateGeminiApiKey = useCallback(async (key) => {
+    const cleanKey = String(key || '').trim()
+    updateLocalData(prev => ({ ...prev, geminiApiKey: cleanKey }))
+    try {
+      localStorage.setItem('rh-gemini-api-key', cleanKey)
+    } catch {}
+
+    if (user) {
+      try {
+        await apiClient.updateUser({ geminiApiKey: cleanKey })
+      } catch (err) {
+        console.warn('Error saving Gemini API key to D1:', err)
+      }
+    }
+  }, [user, updateLocalData])
+
   const toggleTheme = useCallback(async (newTheme) => {
     updateLocalData(prev => ({ ...prev, theme: newTheme }))
 
@@ -419,6 +442,8 @@ export function AuthProvider({ children }) {
       updateInterests,
       markOnboarded,
       toggleTheme,
+      updateGeminiApiKey,
+      geminiApiKey: userData?.geminiApiKey || '',
       completeTopic
     }}>
       {children}

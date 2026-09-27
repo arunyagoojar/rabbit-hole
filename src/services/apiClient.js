@@ -7,6 +7,14 @@ async function getAuthHeaders() {
     'Content-Type': 'application/json'
   }
 
+  // Include user's personal Google Gemini API key if configured
+  try {
+    const userApiKey = localStorage.getItem('rh-gemini-api-key')
+    if (userApiKey && userApiKey.trim().length > 10) {
+      headers['x-gemini-api-key'] = userApiKey.trim()
+    }
+  } catch {}
+
   if (auth?.currentUser) {
     try {
       const token = await auth.currentUser.getIdToken()

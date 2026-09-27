@@ -6,7 +6,7 @@ import { apiClient } from './apiClient.js'
  * Supports Azure AI Foundry, classic Azure OpenAI, and Gemini as a fallback.
  */
 
-const MODEL_CANDIDATES = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest']
+const MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
 const GEMINI_API_BASE = '/api/gemini'
 const AZURE_OPENAI_API_VERSION = import.meta.env.VITE_AZURE_OPENAI_API_VERSION || '2024-10-21'
 const AZURE_OPENAI_BASE = '/api/azure-openai'
@@ -16,8 +16,19 @@ const AI_PROVIDER = normalizeProvider(
 )
 const APP_INTEREST_NAMES = INTERESTS.map(interest => interest.name)
 
+function getStoredGeminiApiKey() {
+  try {
+    const key = localStorage.getItem('rh-gemini-api-key')
+    return key && key.trim().length > 10 ? key.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
 function getGeminiApiKeys() {
+  const userKey = getStoredGeminiApiKey()
   return [
+    userKey,
     import.meta.env.VITE_GEMINI_API_KEY_PRIMARY,
     import.meta.env.VITE_GEMINI_API_KEY,
     import.meta.env.VITE_GEMINI_API_KEY_SECONDARY
@@ -267,6 +278,7 @@ function normalizeProvider(provider) {
 }
 
 function getDefaultProvider() {
+  if (getStoredGeminiApiKey()) return 'gemini'
   if (!import.meta.env.DEV) return 'azure-foundry'
   if (hasAzureFoundryConfig()) return 'azure-foundry'
   if (hasAzureConfig()) return 'azure'

@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sun, Moon, User, LogOut, Flame, Sparkles, Edit2, SlidersHorizontal, LogIn } from 'lucide-react'
+import { Sun, Moon, User, LogOut, Flame, Sparkles, Edit2, SlidersHorizontal, LogIn, Key } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 /**
  * TopBar — sticky header with wordmark, topics customization, theme toggle, and profile/settings menu
  */
-export default function TopBar({ theme, onToggleTheme, onOpenLogin, onOpenInterests }) {
+export default function TopBar({ theme, onToggleTheme, onOpenLogin, onOpenInterests, onOpenApiKey }) {
   const { user, userData, logout } = useAuth()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef(null)
@@ -105,6 +105,31 @@ export default function TopBar({ theme, onToggleTheme, onOpenLogin, onOpenIntere
                   >
                     <Edit2 size={12} />
                     <span>Edit interests</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="profile-dropdown-divider" aria-hidden="true" />
+
+              <div className="profile-dropdown-section">
+                <div className="profile-interests-row">
+                  <span className="stat-row-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Key size={13} />
+                    Google AI Key
+                  </span>
+                  <button 
+                    className="profile-edit-interests-btn"
+                    onClick={() => {
+                      setDropdownOpen(false)
+                      if (onOpenApiKey) onOpenApiKey()
+                    }}
+                    aria-label="Configure Google AI Studio Key"
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <span className={`status-pill ${userData?.geminiApiKey ? 'connected' : 'empty'}`}>
+                      {userData?.geminiApiKey ? 'Connected' : 'Add Key'}
+                    </span>
+                    <Edit2 size={11} />
                   </button>
                 </div>
               </div>

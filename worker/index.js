@@ -15,7 +15,7 @@ const app = new Hono()
 // Global CORS Middleware
 app.use('*', cors({
   origin: '*',
-  allowHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-rh-azure-foundry-base-url', 'x-rh-azure-foundry-model', 'x-rh-azure-openai-base-url', 'x-rh-azure-openai-endpoint', 'api-key'],
+  allowHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-gemini-api-key', 'x-rh-azure-foundry-base-url', 'x-rh-azure-foundry-model', 'x-rh-azure-openai-base-url', 'x-rh-azure-openai-endpoint', 'api-key'],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 }))
 
@@ -69,9 +69,10 @@ const JSON_HEADERS = {
 }
 
 async function proxyGemini(request, env, url) {
-  const apiKey = firstEnv(env, ['GEMINI_API_KEY', 'VITE_GEMINI_API_KEY'])
+  const incomingKey = request.headers.get('x-gemini-api-key') || url.searchParams.get('key')
+  const apiKey = incomingKey || firstEnv(env, ['GEMINI_API_KEY', 'VITE_GEMINI_API_KEY'])
   if (!apiKey) {
-    return jsonError('Gemini is not configured', 500)
+    return jsonError('Gemini API key is not configured. Please provide your Google AI Studio key.', 500)
   }
 
   const path = stripPrefix(url.pathname, '/api/gemini')

@@ -25,6 +25,24 @@ async function hashText(text) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32)
 }
 
+// Helper to resolve personal API key from request headers or user profile in D1
+async function resolveUserApiKey(c) {
+  const headerKey = c.req.header('x-gemini-api-key')
+  if (headerKey && headerKey.trim().length > 10) {
+    return headerKey.trim()
+  }
+
+  const user = c.get('user')
+  const db = c.env.DB
+  if (user?.uid && db) {
+    try {
+      const row = await db.prepare('SELECT gemini_api_key FROM users WHERE id = ?').bind(user.uid).first()
+      if (row?.gemini_api_key) return row.gemini_api_key
+    } catch {}
+  }
+  return null
+}
+
 /**
  * POST /api/v1/ai/topic-starter
  * Returns canonical rabbit hole starter content.
@@ -141,10 +159,12 @@ Topic: "${topic.title}" (${topic.category || 'General'})
 Context: ${topic.description || topic.blurb || 'Explore the deep mechanism.'}`
 
   try {
+    const userApiKey = await resolveUserApiKey(c)
     const raw = await callGemini(c.env, [{ role: 'user', content: prompt }], {
       temperature: 0.85,
       maxOutputTokens: 2048,
-      responseSchema: starterResponseSchema()
+      responseSchema: starterResponseSchema(),
+      userApiKey
     })
 
     const parsed = parseJSON(raw)
@@ -275,10 +295,12 @@ RULES FOR PROMPTS:
 - Prompts should point in meaningfully different directions.`
 
   try {
+    const userApiKey = await resolveUserApiKey(c)
     const raw = await callGemini(c.env, [{ role: 'user', content: fullPrompt }], {
       temperature: 0.85,
       maxOutputTokens: 2048,
-      responseSchema: starterResponseSchema()
+      responseSchema: starterResponseSchema(),
+      userApiKey
     })
 
     const parsed = parseJSON(raw)
@@ -349,10 +371,12 @@ User selected interests to prioritize: ${selectedList}
 Return ONLY a raw JSON array of objects.`
 
   try {
+    const userApiKey = await resolveUserApiKey(c)
     const raw = await callGemini(c.env, [{ role: 'user', content: prompt }], {
       temperature: 0.9,
       maxOutputTokens: 4096,
-      responseSchema: topicsResponseSchema()
+      responseSchema: topicsResponseSchema(),
+      userApiKey
     })
 
     const parsed = parseJSON(raw)

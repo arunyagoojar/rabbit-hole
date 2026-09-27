@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { Target, Layers, Sparkles } from 'lucide-react'
+import { Target, Layers, Sparkles, Key, ExternalLink, Eye, EyeOff, CheckCircle2, AlertCircle, X } from 'lucide-react'
 import { INTERESTS } from '../data/interests'
 import { useAuth } from '../contexts/AuthContext'
 
 /**
  * OnboardingScreen
- * Handles two steps: "howItWorks" and "interests"
+ * Handles steps: "howItWorks", "auth", "apiKey", and "interests"
  */
 export default function OnboardingScreen({ step, onNext }) {
   return (
     <div className="onboarding-screen">
       {step === 'howItWorks' && <HowItWorksStep onNext={onNext} />}
       {step === 'auth' && <AuthStep onNext={onNext} />}
+      {step === 'apiKey' && <ApiKeyStep onNext={onNext} />}
       {step === 'interests' && <InterestsStep onNext={onNext} />}
     </div>
   )
@@ -239,6 +240,198 @@ function AuthStep({ onNext }) {
             <strong>Note:</strong> Your data will only be stored locally on this device. Sign in to sync your progress.
           </p>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function ApiKeyStep({ onNext }) {
+  const { user, geminiApiKey, updateGeminiApiKey } = useAuth()
+  const [inputKey, setInputKey] = useState(geminiApiKey || '')
+  const [showKey, setShowKey] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  const handleTestKey = async () => {
+    const key = inputKey.trim()
+    if (!key) {
+      setTestResult({ valid: false, message: 'Please enter a Google AI Studio API key.' })
+      return
+    }
+
+    setTesting(true)
+    setTestResult(null)
+
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash?key=${encodeURIComponent(key)}`)
+      if (res.ok) {
+        setTestResult({
+          valid: true,
+          message: 'Key verified! Ready for real-time text & voice narration.'
+        })
+      } else {
+        const errorData = await res.json().catch(() => null)
+        const reason = errorData?.error?.message || `HTTP ${res.status}`
+        setTestResult({
+          valid: false,
+          message: `Google API rejected this key: ${reason}`
+        })
+      }
+    } catch (err) {
+      setTestResult({
+        valid: false,
+        message: `Connection failed: ${err?.message || 'Check your internet connection'}`
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const handleSaveAndContinue = async () => {
+    setSaving(true)
+    try {
+      if (inputKey.trim()) {
+        await updateGeminiApiKey(inputKey.trim())
+      }
+      onNext()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="api-key-step page-enter">
+      <div className="auth-brand" style={{ marginBottom: '24px' }}>
+        <div className="auth-rabbit" aria-hidden="true">
+          <Key size={24} strokeWidth={1.8} />
+        </div>
+        <h2 className="auth-heading">
+          Connect your Google AI Key
+        </h2>
+        <p className="auth-sub">
+          Power instant deep curiosity cards and ultra-fast neural voice narration (TTS) directly through your personal key.
+        </p>
+
+        <div className="api-key-account-badge" style={{ marginTop: '14px' }}>
+          <span className={`status-dot ${user ? 'active' : 'guest'}`} />
+          <span>{user ? `Aligned with ${user.email || user.displayName || 'your account'}` : 'Saved locally on this device'}</span>
+        </div>
+      </div>
+
+      <div className="api-steps-container">
+        {/* Step 1 */}
+        <div className="api-step-row">
+          <span className="api-step-num">1</span>
+          <div className="api-step-content">
+            <p className="api-step-title">Get your free API key</p>
+            <p className="api-step-desc">Open Google AI Studio with your Google account (100% free, no credit card required).</p>
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="api-key-external-link"
+            >
+              <span>Open Google AI Studio</span>
+              <ExternalLink size={13} />
+            </a>
+          </div>
+        </div>
+
+        {/* Step 2 */}
+        <div className="api-step-row">
+          <span className="api-step-num">2</span>
+          <div className="api-step-content">
+            <p className="api-step-title">Create & copy the key</p>
+            <p className="api-step-desc">Click <strong>Create API key</strong>, choose or create a project, and copy the key string.</p>
+          </div>
+        </div>
+
+        {/* Step 3 */}
+        <div className="api-step-row">
+          <span className="api-step-num">3</span>
+          <div className="api-step-content">
+            <p className="api-step-title">Paste your key below</p>
+            <div className="api-key-input-wrap">
+              <input
+                type={showKey ? 'text' : 'password'}
+                placeholder="AIzaSy..."
+                value={inputKey}
+                onChange={(e) => {
+                  setInputKey(e.target.value)
+                  setTestResult(null)
+                }}
+                className="api-key-input"
+                autoComplete="off"
+                spellCheck="false"
+              />
+              <button
+                type="button"
+                className="api-key-icon-btn"
+                onClick={() => setShowKey(!showKey)}
+                title={showKey ? 'Hide key' : 'Show key'}
+                aria-label={showKey ? 'Hide key' : 'Show key'}
+              >
+                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+              {inputKey && (
+                <button
+                  type="button"
+                  className="api-key-icon-btn"
+                  onClick={() => {
+                    setInputKey('')
+                    setTestResult(null)
+                  }}
+                  title="Clear text"
+                  aria-label="Clear text"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+              <button
+                type="button"
+                className="api-key-test-btn"
+                onClick={handleTestKey}
+                disabled={testing || !inputKey.trim()}
+              >
+                {testing ? <span className="spinner-sm" /> : 'Test Key'}
+              </button>
+            </div>
+
+            {testResult && (
+              <div className={`api-key-feedback ${testResult.valid ? 'success' : 'error'}`}>
+                {testResult.valid ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+                <span>{testResult.message}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', marginTop: '24px' }}>
+        <button
+          className="cta-button"
+          onClick={handleSaveAndContinue}
+          disabled={saving}
+        >
+          {saving ? <span className="spinner" /> : (inputKey.trim() ? 'Save & Continue' : 'Continue')}
+        </button>
+
+        <button
+          type="button"
+          className="api-key-skip-btn"
+          onClick={onNext}
+          disabled={saving}
+        >
+          Skip for now (use default key)
+        </button>
+
+        <p className="api-key-disclaimer">
+          Your key is saved privately with your account. You can change or remove it anytime in settings.
+        </p>
       </div>
     </div>
   )

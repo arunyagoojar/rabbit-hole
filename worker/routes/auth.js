@@ -27,6 +27,8 @@ authRoutes.post('/sync', async (c) => {
     'SELECT * FROM users WHERE id = ?'
   ).bind(user.uid).first()
 
+  const apiKey = body.geminiApiKey || body.gemini_api_key || null
+
   if (!existingUser) {
     // New user in D1
     const theme = body.theme || 'dark'
@@ -35,8 +37,8 @@ authRoutes.post('/sync', async (c) => {
     const lastReadDate = body.lastReadDate || ''
 
     await db.prepare(`
-      INSERT INTO users (id, email, display_name, photo_url, streak, last_read_date, theme, onboarded, schema_version, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?)
+      INSERT INTO users (id, email, display_name, photo_url, streak, last_read_date, theme, onboarded, schema_version, gemini_api_key, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?)
     `).bind(
       user.uid,
       user.email,
@@ -46,6 +48,7 @@ authRoutes.post('/sync', async (c) => {
       lastReadDate,
       theme,
       onboarded,
+      apiKey,
       now,
       now
     ).run()
@@ -76,18 +79,20 @@ authRoutes.post('/sync', async (c) => {
       }
     }
   } else {
-    // Existing user: update name/email/avatar if changed
+    // Existing user: update name/email/avatar/apiKey if changed
     await db.prepare(`
       UPDATE users
       SET email = COALESCE(?, email),
           display_name = COALESCE(?, display_name),
           photo_url = COALESCE(?, photo_url),
+          gemini_api_key = COALESCE(?, gemini_api_key),
           updated_at = ?
       WHERE id = ?
     `).bind(
       user.email || null,
       user.name || null,
       user.picture || null,
+      apiKey,
       now,
       user.uid
     ).run()
@@ -126,7 +131,8 @@ authRoutes.post('/sync', async (c) => {
   return c.json({
     user: {
       ...fullUser,
-      onboarded: fullUser.onboarded === 1,
+      geminiApiKey: fullUser?.gemini_api_key || '',
+      onboarded: fullUser?.onboarded === 1,
       interests: (interestsResult || []).map(r => r.interest_id),
       savedIds: (savedResult || []).map(r => r.topic_id)
     }

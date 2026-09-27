@@ -12,6 +12,7 @@ import ConsumeModeModal from './components/ConsumeModeModal'
 import ExploreMorePage from './pages/ExploreMorePage'
 import AdminAnalyticsPage from './pages/AdminAnalyticsPage'
 import LoginModal from './components/LoginModal'
+import ApiKeyModal from './components/ApiKeyModal'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { analytics } from './services/analyticsService'
 
@@ -40,8 +41,9 @@ function AppContent() {
     syncTheme(next)
   }, [theme, syncTheme])
 
-  // ─── Login Modal ───
+  // ─── Modals ───
   const [loginModalOpen, setLoginModalOpen] = useState(false)
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
 
   // ─── Onboarding ───
   const [onboardingStep, setOnboardingStep] = useState(() => {
@@ -64,6 +66,10 @@ function AppContent() {
   }, [])
 
   const handleAuthDone = useCallback(() => {
+    setOnboardingStep('apiKey')
+  }, [])
+
+  const handleApiKeyDone = useCallback(() => {
     setOnboardingStep('interests')
   }, [])
 
@@ -178,6 +184,12 @@ function AppContent() {
           onNext={handleAuthDone}
         />
       )}
+      {onboardingStep === 'apiKey' && (
+        <OnboardingScreen
+          step="apiKey"
+          onNext={handleApiKeyDone}
+        />
+      )}
       {onboardingStep === 'interests' && (
         <OnboardingScreen
           step="interests"
@@ -194,6 +206,7 @@ function AppContent() {
               theme={theme} 
               onToggleTheme={toggleTheme} 
               onOpenLogin={() => setLoginModalOpen(true)}
+              onOpenApiKey={() => setApiKeyModalOpen(true)}
               onOpenInterests={() => setOnboardingStep('interests')}
             />
           )}
@@ -276,6 +289,12 @@ function AppContent() {
           <LoginModal
             isOpen={loginModalOpen}
             onClose={() => setLoginModalOpen(false)}
+          />
+
+          {/* Google AI API Key Modal */}
+          <ApiKeyModal
+            isOpen={apiKeyModalOpen}
+            onClose={() => setApiKeyModalOpen(false)}
           />
         </>
       )}

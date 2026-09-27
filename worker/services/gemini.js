@@ -3,15 +3,17 @@
  * Handles direct integration with Google Gemini 2.5 / 2.0 Flash with JSON schemas.
  */
 
-const DEFAULT_MODEL = 'gemini-3.8-flash'
-const FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-flash-latest']
+const DEFAULT_MODEL = 'gemini-2.5-flash'
+const FALLBACK_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite']
 
 export async function callGemini(env, messages, {
   temperature = 0.8,
   maxOutputTokens = 2048,
-  responseSchema = null
+  responseSchema = null,
+  userApiKey = null
 } = {}) {
   const keysToTry = [
+    userApiKey,
     env.GEMINI_API_KEY_PRIMARY,
     env.GEMINI_API_KEY,
     env.VITE_GEMINI_API_KEY,
@@ -19,7 +21,7 @@ export async function callGemini(env, messages, {
   ].filter((key, idx, arr) => Boolean(key) && arr.indexOf(key) === idx)
 
   if (keysToTry.length === 0) {
-    throw new Error('GEMINI_API_KEY is not configured in Cloudflare environment')
+    throw new Error('Gemini API key is not configured. Please add your Google AI Studio API key.')
   }
 
   const contents = messages.map(msg => ({

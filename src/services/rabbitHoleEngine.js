@@ -400,12 +400,18 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
 
       // Direct client fallback
       if (!audioBase64 && !audioUrl) {
+        let userKey = null
+        try {
+          userKey = localStorage.getItem('rh-gemini-api-key')
+        } catch {}
+
         const keys = [
+          userKey,
           import.meta.env.VITE_GEMINI_API_KEY_PRIMARY,
           import.meta.env.VITE_GEMINI_API_KEY,
           import.meta.env.VITE_GEMINI_API_KEY_SECONDARY
-        ].filter(Boolean)
-        const models = ['gemini-2.5-flash-preview-tts', 'gemini-3.8-flash-lite-tts']
+        ].filter(k => Boolean(k) && k.trim().length > 10)
+        const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-preview-tts']
         for (const k of keys) {
           for (const m of models) {
             try {

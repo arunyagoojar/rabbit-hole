@@ -29,6 +29,7 @@ userRoutes.get('/me', async (c) => {
   return c.json({
     user: {
       ...userRecord,
+      geminiApiKey: userRecord.gemini_api_key || '',
       onboarded: userRecord.onboarded === 1,
       interests: (interestsResult || []).map(r => r.interest_id),
       savedIds: (savedResult || []).map(r => r.topic_id)
@@ -38,7 +39,7 @@ userRoutes.get('/me', async (c) => {
 
 /**
  * PATCH /api/v1/user/me
- * Update theme, onboarded status, or profile info
+ * Update theme, onboarded status, API keys, or profile info
  */
 userRoutes.patch('/me', async (c) => {
   const user = c.get('user')
@@ -64,6 +65,10 @@ userRoutes.patch('/me', async (c) => {
   if (body.lastReadDate !== undefined) {
     fields.push('last_read_date = ?')
     values.push(body.lastReadDate)
+  }
+  if (body.geminiApiKey !== undefined) {
+    fields.push('gemini_api_key = ?')
+    values.push(body.geminiApiKey)
   }
 
   if (fields.length === 0) {
