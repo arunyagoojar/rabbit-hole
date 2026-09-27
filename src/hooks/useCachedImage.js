@@ -2,27 +2,37 @@ import { useState, useEffect, useRef } from 'react'
 import { getImage, saveImage } from '../services/db'
 import { fetchPexelsImage, isPexelsConfigured } from '../services/pexelsService'
 
-// In-memory map of imageQuery → resolved URL to avoid repeated DB/API calls
+// In-memory map of topicKey → resolved URL to avoid repeated DB/API calls
 const resolvedCache = new Map()
 
-export function useCachedImage(imageUrl, imageQuery) {
+export function useCachedImage(topicOrUrl, optionalQuery) {
+  const isObject = topicOrUrl && typeof topicOrUrl === 'object'
+  const imageUrl = isObject ? (topicOrUrl.imageUrl || topicOrUrl.coverImage || null) : (topicOrUrl || null)
+  const topicKey = isObject ? (topicOrUrl.id || topicOrUrl.title) : (optionalQuery || topicOrUrl || '')
+
   const [resolvedUrl, setResolvedUrl] = useState(() => {
-    if (imageQuery && resolvedCache.has(imageQuery)) {
-      return resolvedCache.get(imageQuery)
+    if (imageUrl) return imageUrl
+    if (topicKey && resolvedCache.has(topicKey)) {
+      return resolvedCache.get(topicKey)
     }
-    return imageUrl || null
+    return null
   })
 
   const imageUrlRef = useRef(imageUrl)
   imageUrlRef.current = imageUrl
 
   useEffect(() => {
-    if (!imageQuery) return
+    if (imageUrl) {
+      setResolvedUrl(imageUrl)
+      return
+    }
+
+    if (!topicKey) return
     let isActive = true
 
     // Already resolved in this session
-    if (resolvedCache.has(imageQuery)) {
-      const cached = resolvedCache.get(imageQuery)
+    if (resolvedCache.has(topicKey)) {
+      const cached = resolvedCache.get(topicKey)
       setResolvedUrl(cached)
       return
     }
@@ -30,10 +40,10 @@ export function useCachedImage(imageUrl, imageQuery) {
     async function resolve() {
       // 1. Try IndexedDB cache first (instant, offline-capable)
       try {
-        const cachedBlob = await getImage(imageQuery)
+        const cachedBlob = await getImage(topicKey)
         if (cachedBlob && isActive) {
           const blobUrl = URL.createObjectURL(cachedBlob)
-          resolvedCache.set(imageQuery, blobUrl)
+          resolvedCache.set(topicKey, blobUrl)
           setResolvedUrl(blobUrl)
           return
         }
@@ -41,26 +51,24 @@ export function useCachedImage(imageUrl, imageQuery) {
         // IndexedDB failed, continue to API
       }
 
-      // 2. Fetch from Pexels API
-      if (isPexelsConfigured()) {
-        try {
-          const pexelsUrl = await fetchPexelsImage(imageQuery)
-          if (pexelsUrl && isActive) {
-            resolvedCache.set(imageQuery, pexelsUrl)
-            setResolvedUrl(pexelsUrl)
+      // 2. Fetch from Pexels API / Photography service
+      try {
+        const pexelsUrl = await fetchPexelsImage(isObject ? topicOrUrl : topicKey)
+        if (pexelsUrl && isActive) {
+          resolvedCache.set(topicKey, pexelsUrl)
+          setResolvedUrl(pexelsUrl)
 
-            // Cache the image blob in IndexedDB in the background
-            cacheImageBlob(pexelsUrl, imageQuery)
-            return
-          }
-        } catch {
-          // Pexels failed, fall through
+          // Cache the image blob in IndexedDB in the background
+          cacheImageBlob(pexelsUrl, topicKey)
+          return
         }
+      } catch {
+        // Pexels failed, fall through
       }
 
-      // 3. Fallback to the original URL (could be LoremFlickr or anything)
+      // 3. Fallback to original URL
       if (isActive && imageUrlRef.current) {
-        resolvedCache.set(imageQuery, imageUrlRef.current)
+        resolvedCache.set(topicKey, imageUrlRef.current)
         setResolvedUrl(imageUrlRef.current)
       }
     }
@@ -68,13 +76,7 @@ export function useCachedImage(imageUrl, imageQuery) {
     resolve()
 
     return () => { isActive = false }
-  }, [imageQuery])
-
-  // If imageUrl changes (topic swap) and we don't have a cached version, update
-  useEffect(() => {
-    if (!imageQuery || resolvedCache.has(imageQuery)) return
-    setResolvedUrl(imageUrl)
-  }, [imageUrl, imageQuery])
+  }, [topicKey, imageUrl, isObject, topicOrUrl])
 
   return resolvedUrl || imageUrl
 }

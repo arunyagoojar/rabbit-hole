@@ -1,11 +1,12 @@
-import { INTERESTS } from '../data/interests'
+import { INTERESTS } from '../data/interests.js'
+import { apiClient } from './apiClient.js'
 
 /**
  * aiService.js - AI provider client for Rabbit Hole.
  * Supports Azure AI Foundry, classic Azure OpenAI, and Gemini as a fallback.
  */
 
-const MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
+const MODEL_CANDIDATES = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest']
 const GEMINI_API_BASE = '/api/gemini'
 const AZURE_OPENAI_API_VERSION = import.meta.env.VITE_AZURE_OPENAI_API_VERSION || '2024-10-21'
 const AZURE_OPENAI_BASE = '/api/azure-openai'
@@ -15,8 +16,16 @@ const AI_PROVIDER = normalizeProvider(
 )
 const APP_INTEREST_NAMES = INTERESTS.map(interest => interest.name)
 
+function getGeminiApiKeys() {
+  return [
+    import.meta.env.VITE_GEMINI_API_KEY_PRIMARY,
+    import.meta.env.VITE_GEMINI_API_KEY,
+    import.meta.env.VITE_GEMINI_API_KEY_SECONDARY
+  ].filter((key, idx, arr) => Boolean(key) && arr.indexOf(key) === idx)
+}
+
 function getGeminiApiKey() {
-  return import.meta.env.VITE_GEMINI_API_KEY || ''
+  return getGeminiApiKeys()[0] || ''
 }
 
 function getAzureApiKey() {
@@ -81,8 +90,8 @@ async function chatCompletion(messages, { temperature = 0.7, maxTokens, response
 }
 
 async function geminiChatCompletion(messages, { temperature = 0.7, maxTokens, responseSchema } = {}) {
-  const key = getGeminiApiKey()
-  if (!key && import.meta.env.DEV) {
+  const keys = getGeminiApiKeys()
+  if (keys.length === 0 && import.meta.env.DEV) {
     throw new Error('VITE_GEMINI_API_KEY is not set')
   }
 
@@ -103,36 +112,33 @@ async function geminiChatCompletion(messages, { temperature = 0.7, maxTokens, re
 
   let lastError = null
 
-  for (const model of MODEL_CANDIDATES) {
-    const keyParam = key ? `?key=${encodeURIComponent(key)}` : ''
-    const targetUrl = `${GEMINI_API_BASE}/v1beta/models/${model}:generateContent${keyParam}`
-    let res
-    try {
-      res = await fetch(targetUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
-      })
-    } catch (err) {
-      lastError = err
-      continue
-    }
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => res.statusText)
-      lastError = new Error(`Gemini API error ${res.status}: ${errText}`)
-
-      if (res.status === 429 || res.status === 500 || res.status === 503) {
+  for (const key of keys) {
+    for (const model of MODEL_CANDIDATES) {
+      const keyParam = key ? `?key=${encodeURIComponent(key)}` : ''
+      const targetUrl = `${GEMINI_API_BASE}/v1beta/models/${model}:generateContent${keyParam}`
+      let res
+      try {
+        res = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        })
+      } catch (err) {
+        lastError = err
         continue
       }
 
-      throw lastError
-    }
+      if (!res.ok) {
+        const errText = await res.text().catch(() => res.statusText)
+        lastError = new Error(`Gemini API error ${res.status}: ${errText}`)
+        continue
+      }
 
-    const data = await res.json()
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      const data = await res.json()
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    }
   }
 
   throw lastError || new Error('Gemini API request failed')
@@ -311,40 +317,61 @@ function normalizeTags(tags, fallbackCategory) {
  * of paragraph groups that each fit comfortably on one card screen.
  */
 export async function generateTopicStarter(topic) {
-  const prompt = `You are the content engine for Rabbit Hole, a learning app where users read through cards on a topic and go progressively deeper with every card.
+  try {
+    const res = await apiClient.generateStarter(topic)
+    if (res && Array.isArray(res.pages) && res.pages.length > 0) {
+      return res
+    }
+  } catch (backendErr) {
+    console.warn('Worker AI starter failed, trying fallback:', backendErr?.message)
+  }
 
-You are writing card 1: the intro card.
+  const prompt = `You are the chief editorial writer for Rabbit Hole, an editorial curiosity application designed for intelligent, curious minds.
+
+Your writing is NOT an encyclopedia, NOT a textbook, and NOT a generic summary.
+The reader should feel like they just discovered something fascinating and are being taken deeper into the rabbit hole.
+
+STRUCTURE YOUR CONTENT IN THIS EXACT PROGRESSION:
+
+1. THE HOOK (Page 1, Paragraph 1):
+Begin with something immediately relatable, visual, surprising, or intellectually provocative. Create an instant spark.
+Example style:
+"You are sitting in a car. A pedestrian suddenly steps onto the road. You know what is happening almost instantly — you see where they are looking, judge their speed, and predict whether they'll cross. A machine has to do something similar, except it has to turn the entire living street into mathematics."
+Never start with a definition ("X is a technology that..."), never repeat the title, and never start with abstract history.
+
+2. SIMPLE EXPLANATION (Page 1, Paragraph 2):
+Explain the core intuitive concept using a clear analogy or concrete physical situation that an intelligent non-expert grasps effortlessly.
+
+3. DEEPER EXPLANATION (Page 2, Paragraph 1):
+Gradually introduce the actual mechanism — how it actually functions underneath.
+
+4. THE "WAIT, HOW?" MOMENT (Page 2, Paragraph 2):
+Introduce the counter-intuitive twist or problem that naturally makes the reader stop and wonder: "Wait, how does that actually work?"
+
+5. DEEPER DETAIL (Page 3):
+Explain that layer with vivid clarity without becoming academic or dense. End with a sense that they are standing at the edge of an even deeper mystery.
+
+WRITING RULES (CRITICAL FOR BOTH READING & AUDIO NARRATION):
+- Write for BOTH the eye and the ear. Sentences must sound effortless and natural when spoken aloud.
+- Paragraphs must be short and crisp (2 to 4 sentences each).
+- Absolutely NO bullet points, NO numbered lists, NO asterisks, NO markdown headers.
+- Absolutely NO dashes or hyphens at the start of sentences.
+- NEVER repeat or recite the topic title, subtitle, category, reading time, or metadata.
+- NEVER use generic filler words: "fascinating", "intriguing", "remarkable", "delve into", "dive into", "in conclusion", "it's worth noting", "unpacking", "testament to", "realm of".
+- Total length: 240 to 340 words across 3 natural pages/sections.
+
+RABBIT-HOLE QUESTIONS RULES:
+- Exactly 3 clickable follow-up questions (under 12 words each).
+- They must emerge naturally from what the reader just learned.
+- They must provoke intense curiosity (e.g. "What happens when two sensors completely disagree?").
 
 Return a JSON object with:
-- "pages": an array of strings. Each string is one page of content (1-2 paragraphs per page, roughly 80-120 words per page). Split the content so each page is comfortable to read on a single mobile screen without scrolling. Use 2-4 pages total.
-- "prompts": exactly 3 clickable follow-up questions.
-
-IMPORTANT: Separate paragraphs within each page using a blank line (two newlines). Do NOT use any special separator between pages — the array structure handles that.
-
-INTRO CARD RULES:
-Start with a real story, a real moment in history, or a real person connected to this topic. Not a definition. Not "X is a phenomenon where...". Drop the reader into a scene. Make it feel like the opening of a great documentary.
-
-After the opening story or moment, pull back and connect it to the topic the user is about to explore. End the last page with one line that makes them feel like they are standing at the edge of something much bigger than they expected.
-
-RULES FOR THE CONTENT:
-- Total length across all pages: 250 to 350 words.
-- ONLY flowing prose paragraphs. Absolutely NO bullet points, NO numbered lists, NO dashes at the start of lines, NO em-dashes used as list markers, NO hyphens used to introduce items.
-- Do not write a title or heading. The title is handled separately.
-- Do not use section breaks, dividers, or horizontal rules of any kind.
-- Do not start any sentence with a dash, hyphen, or bullet character.
-- Write in second person where natural. Talk to the reader directly.
-- Vary sentence length deliberately. Mix short punchy sentences with longer flowing ones.
-- Every fact must be accurate. If you are uncertain about a specific date, name, or figure, do not guess.
-- Never use these words or phrases: "fascinating", "intriguing", "remarkable", "delve into", "dive into", "it's worth noting", "in conclusion", "let's explore", "unpacking", "demystifying", "captivating", "in the realm of".
-- Write like a longform journalist who loves this topic deeply.
-
-RULES FOR PROMPTS:
-- Each prompt should be a natural question, max 13 words.
-- Prompts should point in meaningfully different directions.
+- "hook": the crisp opening hook paragraph (50-80 words).
+- "pages": an array of 3 strings (each string is 1 reading section of 1-2 paragraphs separated by a blank line).
+- "prompts": array of 3 distinct rabbit-hole questions.
 
 Topic: "${topic?.title}" (${topic?.category || topic?.tags?.[0] || 'General'})
-Description: ${topic?.description || 'No description provided.'}
-Tags: ${(topic?.tags || []).join(', ') || (topic?.category || topic?.tags?.[0] || 'General')}`
+Context: ${topic?.description || 'No description provided.'}`
 
   let raw
   try {
@@ -366,8 +393,11 @@ Tags: ${(topic?.tags || []).join(', ') || (topic?.category || topic?.tags?.[0] |
     if (pages.length === 0 || prompts.length < 3) {
       throw new Error('Starter response was missing content or prompts')
     }
+    const cleanPages = pages.map(cleanDashes)
+    const hook = parsed.hook || (cleanPages[0] ? cleanPages[0].split(/\n{2,}/)[0] : '')
     return {
-      pages: pages.map(cleanDashes),
+      hook,
+      pages: cleanPages,
       prompts: prompts.filter(Boolean).slice(0, 3)
     }
   } catch (err) {
@@ -381,6 +411,15 @@ Tags: ${(topic?.tags || []).join(', ') || (topic?.category || topic?.tags?.[0] |
  * Returns { pages: string[], prompts: string[] }.
  */
 export async function generateRabbitHoleStep(topic, prompt, previousCards = []) {
+  try {
+    const res = await apiClient.generateStep(topic, prompt, previousCards)
+    if (res && Array.isArray(res.pages) && res.pages.length > 0) {
+      return res
+    }
+  } catch (backendErr) {
+    console.warn('Worker AI step failed, trying fallback:', backendErr?.message)
+  }
+
   const category = topic?.category || topic?.tags?.[0] || 'General'
   const depth = previousCards.length + 1
   const context = previousCards
@@ -469,6 +508,16 @@ RULES FOR PROMPTS:
  * the user opens a topic, which avoids fragile oversized Gemini responses.
  */
 export async function generateInterestTopics(interests = [], count = 20, options = {}) {
+  try {
+    const res = await apiClient.generateExploreTopics(interests, count)
+    if (res && Array.isArray(res.topics) && res.topics.length > 0) {
+      apiClient.saveTopics(res.topics).catch(console.error)
+      return res.topics
+    }
+  } catch (backendErr) {
+    console.warn('Worker AI explore topics failed, trying fallback:', backendErr?.message)
+  }
+
   const topics = []
   const seenTitles = new Set()
   const batchSize = 5
@@ -579,6 +628,9 @@ function starterSchema() {
   return {
     type: 'OBJECT',
     properties: {
+      hook: {
+        type: 'STRING'
+      },
       pages: {
         type: 'ARRAY',
         items: { type: 'STRING' }

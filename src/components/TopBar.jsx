@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sun, Moon, User, LogOut, Flame, Sparkles, Edit2 } from 'lucide-react'
+import { Sun, Moon, User, LogOut, Flame, Sparkles, Edit2, SlidersHorizontal, LogIn } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 /**
- * TopBar — sticky header with wordmark, theme toggle, and auth profile menu
+ * TopBar — sticky header with wordmark, topics customization, theme toggle, and profile/settings menu
  */
 export default function TopBar({ theme, onToggleTheme, onOpenLogin, onOpenInterests }) {
   const { user, userData, logout } = useAuth()
@@ -24,11 +24,7 @@ export default function TopBar({ theme, onToggleTheme, onOpenLogin, onOpenIntere
   }, [dropdownOpen])
 
   const handleProfileClick = () => {
-    if (!user) {
-      onOpenLogin()
-    } else {
-      setDropdownOpen(prev => !prev)
-    }
+    setDropdownOpen(prev => !prev)
   }
 
   const handleSignOut = () => {
@@ -53,8 +49,8 @@ export default function TopBar({ theme, onToggleTheme, onOpenLogin, onOpenIntere
           <button
             className={`profile-trigger-btn${user ? ' authenticated' : ''}`}
             onClick={handleProfileClick}
-            aria-label={user ? 'Open profile menu' : 'Sign in'}
-            aria-haspopup={user ? 'true' : 'false'}
+            aria-label={user ? 'Open profile menu' : 'Open settings & profile menu'}
+            aria-haspopup="true"
             aria-expanded={dropdownOpen}
           >
             {user ? (
@@ -75,65 +71,68 @@ export default function TopBar({ theme, onToggleTheme, onOpenLogin, onOpenIntere
             )}
           </button>
 
-          {user && dropdownOpen && (
+          {dropdownOpen && (
             <div className="profile-dropdown page-enter" role="menu">
               <div className="profile-dropdown-header">
-                <p className="profile-name">{user.displayName || 'Explorer'}</p>
-                <p className="profile-email">{user.email}</p>
+                <p className="profile-name">{user ? (user.displayName || 'Explorer') : 'Guest Explorer'}</p>
+                <p className="profile-email">{user ? user.email : 'Local device session'}</p>
               </div>
 
               <div className="profile-dropdown-divider" aria-hidden="true" />
 
-              <div className="profile-dropdown-stats">
+              <div className="profile-dropdown-section">
                 <div className="profile-stat-row">
                   <span className="stat-row-label">
-                    <Flame size={16} className="stat-icon-flame" />
+                    <Flame size={15} className="stat-icon-flame" />
                     Streak
                   </span>
-                  <span className="stat-row-val">{userData?.streak || 0} days</span>
-                </div>
-                <div className="profile-stat-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span className="stat-row-label">
-                    <Sparkles size={16} className="stat-icon-spark" />
-                    Interests
-                  </span>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span className="stat-row-val">{userData?.interests?.length || 0}</span>
-                    <button 
-                      onClick={() => {
-                        onOpenInterests()
-                        setDropdownOpen(false)
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'inherit',
-                        opacity: 0.6,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '4px'
-                      }}
-                      aria-label="Edit Interests"
-                      title="Edit Interests"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                  </div>
+                  <span className="stat-row-val">{userData?.streak || 1} {userData?.streak === 1 ? 'day' : 'days'}</span>
                 </div>
               </div>
 
               <div className="profile-dropdown-divider" aria-hidden="true" />
 
-              <button 
-                className="profile-signout-btn" 
-                onClick={handleSignOut}
-                role="menuitem"
-              >
-                <LogOut size={14} />
-                <span>Sign Out</span>
-              </button>
+              <div className="profile-dropdown-section">
+                <div className="profile-interests-row">
+                  <span className="stat-row-label">Interests</span>
+                  <button 
+                    className="profile-edit-interests-btn"
+                    onClick={() => {
+                      onOpenInterests()
+                      setDropdownOpen(false)
+                    }}
+                    aria-label="Edit interests"
+                  >
+                    <Edit2 size={12} />
+                    <span>Edit interests</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="profile-dropdown-divider" aria-hidden="true" />
+
+              {user ? (
+                <button 
+                  className="profile-signout-btn" 
+                  onClick={handleSignOut}
+                  role="menuitem"
+                >
+                  <LogOut size={14} />
+                  <span>Sign out</span>
+                </button>
+              ) : (
+                <button 
+                  className="profile-signout-btn profile-signin-btn" 
+                  onClick={() => {
+                    setDropdownOpen(false)
+                    onOpenLogin()
+                  }}
+                  role="menuitem"
+                >
+                  <LogIn size={14} />
+                  <span>Sign in / Create account</span>
+                </button>
+              )}
             </div>
           )}
         </div>

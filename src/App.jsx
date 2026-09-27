@@ -7,8 +7,13 @@ import ExplorePage from './pages/ExplorePage'
 import SavedPage from './pages/SavedPage'
 import TimelinePage from './pages/TimelinePage'
 import ReadingOverlay from './components/ReadingOverlay'
+import AudioOnlyPlayer from './components/AudioOnlyPlayer'
+import ConsumeModeModal from './components/ConsumeModeModal'
+import ExploreMorePage from './pages/ExploreMorePage'
+import AdminAnalyticsPage from './pages/AdminAnalyticsPage'
 import LoginModal from './components/LoginModal'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { analytics } from './services/analyticsService'
 
 /**
  * AppContent — handles the main page shell, utilizing the AuthContext state
@@ -39,16 +44,11 @@ function AppContent() {
   const [loginModalOpen, setLoginModalOpen] = useState(false)
 
   // ─── Onboarding ───
-  // Initialize onboarding step based on whether the user has completed it before.
-  // Once set to 'done', it should NEVER go back to 'splash'.
   const [onboardingStep, setOnboardingStep] = useState(() => {
-    // Check localStorage directly for immediate answer (no async wait)
     const alreadyOnboarded = localStorage.getItem('rh-onboarded') === '1'
     return alreadyOnboarded ? 'done' : 'splash'
   })
 
-  // When loading finishes, update onboarding step if data says we're onboarded
-  // but NEVER reset back to 'splash' once we've moved past it
   useEffect(() => {
     if (!loading && isOnboarded) {
       setOnboardingStep('done')
@@ -72,14 +72,39 @@ function AppContent() {
     setOnboardingStep('done')
   }, [markOnboarded])
 
-  // ─── Navigation ───
+  // ─── Navigation & Views ───
   const [activeTab, setActiveTab] = useState('explore')
+  const [isExploreMoreOpen, setIsExploreMoreOpen] = useState(false)
+  const [showAdmin, setShowAdmin] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const search = window.location.search || ''
+      const pathname = window.location.pathname || ''
+      return search.includes('admin=') || pathname.includes('/admin')
+    }
+    return false
+  })
 
-  // ─── Reading Overlay ───
+  // ─── Topic Consumption Selection ───
+  const [modeModalTopic, setModeModalTopic] = useState(null)
   const [readingTopic, setReadingTopic] = useState(null)
+  const [audioTopic, setAudioTopic] = useState(null)
 
-  const openReading = useCallback((topic) => {
-    setReadingTopic(topic)
+  // Triggered whenever a title or topic card is clicked
+  const handleOpenTopic = useCallback((topic) => {
+    setModeModalTopic(topic)
+  }, [])
+
+  const handleSelectConsumeMode = useCallback((mode, topic) => {
+    setModeModalTopic(null)
+    analytics.startTopicSession(topic.id, mode)
+
+    if (mode === 'audio') {
+      setReadingTopic(null)
+      setAudioTopic(topic)
+    } else {
+      setAudioTopic(null)
+      setReadingTopic(topic)
+    }
   }, [])
 
   const closeReading = useCallback((closePayload, legacyTotalCards) => {
@@ -89,14 +114,13 @@ function AppContent() {
         : { cardsRead: closePayload, totalCards: legacyTotalCards }
       const normalizedTotal = Number.isFinite(payload.totalCards)
         ? payload.totalCards
-        : readingTopic.content?.length || 0
+        : readingTopic.content?.length || 1
       const normalizedCardsRead = Number.isFinite(payload.cardsRead) ? payload.cardsRead : normalizedTotal
       const generatedCards = Array.isArray(payload.cards) ? payload.cards : []
       const exploredCardsRead = normalizedCardsRead > 0
         ? normalizedCardsRead
-        : generatedCards.length > 0 ? 1 : 0
+        : generatedCards.length > 0 ? 1 : 1
 
-      // Log reading history & update streak
       if (exploredCardsRead > 0) {
         completeTopic(
           readingTopic.id,
@@ -115,6 +139,10 @@ function AppContent() {
     setReadingTopic(null)
   }, [readingTopic, completeTopic])
 
+  const closeAudio = useCallback(() => {
+    setAudioTopic(null)
+  }, [])
+
   // ─── Render ───
   if (loading) {
     return (
@@ -130,11 +158,11 @@ function AppContent() {
   }
 
   const showOnboarding = onboardingStep !== 'done'
-  const showReading = !!readingTopic
+  const isImmersiveOpen = Boolean(readingTopic || audioTopic || isExploreMoreOpen || showAdmin)
 
   return (
     <div className="app-shell">
-      {/* Onboarding Screens (overlay) */}
+      {/* Onboarding Screens */}
       {onboardingStep === 'splash' && (
         <SplashScreen onComplete={handleSplashComplete} />
       )}
@@ -160,40 +188,87 @@ function AppContent() {
       {/* Main App */}
       {!showOnboarding && (
         <>
-          <TopBar 
-            theme={theme} 
-            onToggleTheme={toggleTheme} 
-            onOpenLogin={() => setLoginModalOpen(true)}
-            onOpenInterests={() => setOnboardingStep('interests')}
-          />
+          {/* Top Bar (Hidden when in immersive reader / audio / explore-more / admin) */}
+          {!isImmersiveOpen && (
+            <TopBar 
+              theme={theme} 
+              onToggleTheme={toggleTheme} 
+              onOpenLogin={() => setLoginModalOpen(true)}
+              onOpenInterests={() => setOnboardingStep('interests')}
+            />
+          )}
 
           <main className="page-content">
-            {activeTab === 'explore' && (
-              <ExplorePage
-                onOpenTopic={openReading}
+            {/* Hidden Admin Analytics View */}
+            {showAdmin ? (
+              <AdminAnalyticsPage onBack={() => setShowAdmin(false)} />
+            ) : isExploreMoreOpen ? (
+              /* Dedicated Finite Explore More Subpage */
+              <ExploreMorePage
+                onBack={() => setIsExploreMoreOpen(false)}
+                onOpenTopic={handleOpenTopic}
               />
-            )}
-            {activeTab === 'saved' && (
-              <SavedPage
-                onOpenTopic={openReading}
-              />
-            )}
-            {activeTab === 'timeline' && (
-              <TimelinePage />
+            ) : (
+              /* Standard Tabs */
+              <>
+                {activeTab === 'explore' && (
+                  <ExplorePage
+                    onOpenTopic={handleOpenTopic}
+                    onNavigateExploreMore={() => setIsExploreMoreOpen(true)}
+                  />
+                )}
+                {activeTab === 'saved' && (
+                  <SavedPage
+                    onOpenTopic={handleOpenTopic}
+                  />
+                )}
+                {activeTab === 'timeline' && (
+                  <TimelinePage />
+                )}
+              </>
             )}
           </main>
 
+          {/* Bottom Navigation */}
           <BottomNav
             activeTab={activeTab}
-            onTabChange={setActiveTab}
-            hidden={showReading}
+            onTabChange={(tab) => {
+              setIsExploreMoreOpen(false)
+              setShowAdmin(false)
+              setActiveTab(tab)
+            }}
+            hidden={isImmersiveOpen}
           />
 
-          {/* Reading Overlay */}
-          {showReading && (
+          {/* Prompt: How to consume topic? (Reading vs Audio) */}
+          <ConsumeModeModal
+            topic={modeModalTopic}
+            isOpen={Boolean(modeModalTopic)}
+            onClose={() => setModeModalTopic(null)}
+            onSelectMode={handleSelectConsumeMode}
+          />
+
+          {/* Mode 1: Continuous Single-Page Reading Experience */}
+          {readingTopic && (
             <ReadingOverlay
               topic={readingTopic}
               onClose={closeReading}
+              onSwitchToAudio={(topic) => {
+                setReadingTopic(null)
+                setAudioTopic(topic)
+              }}
+            />
+          )}
+
+          {/* Mode 2: Audio-Only Player */}
+          {audioTopic && (
+            <AudioOnlyPlayer
+              topic={audioTopic}
+              onClose={closeAudio}
+              onSwitchToRead={(topic) => {
+                setAudioTopic(null)
+                setReadingTopic(topic)
+              }}
             />
           )}
 

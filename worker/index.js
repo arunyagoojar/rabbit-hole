@@ -1,46 +1,94 @@
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { authRoutes } from './routes/auth'
+import { userRoutes } from './routes/users'
+import { interestsRoutes } from './routes/interests'
+import { savedRoutes } from './routes/saved'
+import { sessionsRoutes } from './routes/sessions'
+import { topicsRoutes } from './routes/topics'
+import { aiRoutes } from './routes/ai'
+import { mediaRoutes } from './routes/media'
+import { analyticsRoutes } from './routes/analytics'
+
+const app = new Hono()
+
+// Global CORS Middleware
+app.use('*', cors({
+  origin: '*',
+  allowHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-rh-azure-foundry-base-url', 'x-rh-azure-foundry-model', 'x-rh-azure-openai-base-url', 'x-rh-azure-openai-endpoint', 'api-key'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
+}))
+
+// Healthcheck
+app.get('/api/health', (c) => c.json({
+  status: 'ok',
+  version: '2.0.0',
+  timestamp: Date.now()
+}))
+
+// Mount v1 API Routers
+app.route('/api/v1/auth', authRoutes)
+app.route('/api/v1/user', userRoutes)
+app.route('/api/v1/interests', interestsRoutes)
+app.route('/api/v1/saved', savedRoutes)
+app.route('/api/v1/sessions', sessionsRoutes)
+app.route('/api/v1/topics', topicsRoutes)
+app.route('/api/v1/ai', aiRoutes)
+app.route('/api/v1/media', mediaRoutes)
+app.route('/api/v1/analytics', analyticsRoutes)
+
+// Legacy Proxy Handlers (maintained for fallback during migration)
+app.all('/api/gemini/*', async (c) => proxyGemini(c.req.raw, c.env, new URL(c.req.url)))
+app.all('/api/azure-foundry/*', async (c) => proxyAzureFoundry(c.req.raw, c.env, new URL(c.req.url)))
+app.all('/api/azure-openai/*', async (c) => proxyAzureOpenAI(c.req.raw, c.env, new URL(c.req.url)))
+app.all('/api/pexels/*', async (c) => proxyPexels(c.req.raw, c.env, new URL(c.req.url)))
+
+// Cloudflare Worker Fetch Entrypoint
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url)
+
+    // Handle API routes via Hono
+    if (url.pathname.startsWith('/api/')) {
+      return app.fetch(request, env, ctx)
+    }
+
+    // Serve Static SPA Assets
+    if (env.ASSETS) {
+      return env.ASSETS.fetch(request)
+    }
+
+    return new Response('Not found', { status: 404 })
+  }
+}
+
+// ─── Legacy Proxy Implementation ───
+
 const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8'
 }
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url)
-
-    if (url.pathname.startsWith('/api/')) {
-      return handleApiRequest(request, env, url)
-    }
-
-    return env.ASSETS.fetch(request)
-  }
-}
-
-async function handleApiRequest(request, env, url) {
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204 })
+async function proxyGemini(request, env, url) {
+  const apiKey = firstEnv(env, ['GEMINI_API_KEY', 'VITE_GEMINI_API_KEY'])
+  if (!apiKey) {
+    return jsonError('Gemini is not configured', 500)
   }
 
-  try {
-    if (url.pathname.startsWith('/api/azure-foundry')) {
-      return proxyAzureFoundry(request, env, url)
-    }
+  const path = stripPrefix(url.pathname, '/api/gemini')
+  const targetUrl = new URL(`https://generativelanguage.googleapis.com${path}`)
+  url.searchParams.forEach((value, key) => {
+    if (key !== 'key') targetUrl.searchParams.append(key, value)
+  })
+  targetUrl.searchParams.set('key', apiKey)
 
-    if (url.pathname.startsWith('/api/azure-openai')) {
-      return proxyAzureOpenAI(request, env, url)
-    }
+  const headers = copyHeaders(request.headers)
+  headers.delete('host')
 
-    if (url.pathname.startsWith('/api/gemini')) {
-      return proxyGemini(request, env, url)
-    }
-
-    if (url.pathname.startsWith('/api/pexels')) {
-      return proxyPexels(request, env, url)
-    }
-
-    return jsonError('Unknown API route', 404)
-  } catch (err) {
-    console.error('API proxy error:', err)
-    return jsonError(err?.message || 'API proxy failed', 500)
-  }
+  return fetch(targetUrl, {
+    method: request.method,
+    headers,
+    body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body
+  })
 }
 
 async function proxyAzureFoundry(request, env, url) {
@@ -102,29 +150,6 @@ async function proxyAzureOpenAI(request, env, url) {
   headers.delete('api-key')
   headers.set('Content-Type', request.headers.get('Content-Type') || 'application/json')
   headers.set('api-key', apiKey)
-
-  return fetch(targetUrl, {
-    method: request.method,
-    headers,
-    body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body
-  })
-}
-
-async function proxyGemini(request, env, url) {
-  const apiKey = firstEnv(env, ['GEMINI_API_KEY', 'VITE_GEMINI_API_KEY'])
-  if (!apiKey) {
-    return jsonError('Gemini is not configured', 500)
-  }
-
-  const path = stripPrefix(url.pathname, '/api/gemini')
-  const targetUrl = new URL(`https://generativelanguage.googleapis.com${path}`)
-  url.searchParams.forEach((value, key) => {
-    if (key !== 'key') targetUrl.searchParams.append(key, value)
-  })
-  targetUrl.searchParams.set('key', apiKey)
-
-  const headers = copyHeaders(request.headers)
-  headers.delete('host')
 
   return fetch(targetUrl, {
     method: request.method,

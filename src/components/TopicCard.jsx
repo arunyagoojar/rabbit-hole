@@ -1,86 +1,87 @@
 import { useState } from 'react'
+import { Bookmark } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
 import { useCachedImage } from '../hooks/useCachedImage'
-import { TOPIC_GRADIENTS } from '../data/gradients'
 
 /**
- * TopicCard — used in both Explore and Saved pages
- *
- * Props:
- *   topic       — topic object
- *   onClick     — fn(topic) — opens reading overlay
- *   wide        — boolean — full-width card (16:9)
+ * TopicCard — Minimalist Architectural & Photographic Editorial Card
+ * 
+ * Features:
+ * - Strict topic validation: never renders undefined or blank cards.
+ * - Relevant photography from Pexels / cached storage.
+ * - Subtle immersive zoom (1.04x) with sharp center and softened vignette edges.
+ * - Editorial typography and metadata.
  */
 export default function TopicCard({ topic, onClick, wide }) {
-  const categoryName = topic.category || (topic.tags && topic.tags[0]) || 'Science'
-  const gradient = TOPIC_GRADIENTS[categoryName] || 'linear-gradient(135deg, #1a1a1a, #333)'
-
-  // Use the pre-fetched static image URL with caching
-  const bgImage = useCachedImage(topic.imageUrl, topic.imageQuery || topic.id);
+  const { userData, toggleSaveTopic } = useAuth()
   const [imgLoaded, setImgLoaded] = useState(false)
+
+  // Validation: Malformed topics without title or id must never reach UI
+  if (!topic || !topic.id || !topic.title || typeof topic.title !== 'string' || !topic.title.trim()) {
+    console.warn('TopicCard: rejected malformed topic:', topic)
+    return null
+  }
+
+  const categoryName = topic.category || (topic.tags && topic.tags[0]) || 'General'
+  const isSaved = (userData?.savedIds || []).includes(topic.id)
+  const photoUrl = useCachedImage(topic)
+
+  const handleBookmark = (e) => {
+    e.stopPropagation()
+    toggleSaveTopic(topic.id)
+  }
 
   return (
     <article
-      className={`topic-card${wide ? ' wide' : ''}`}
+      className={`arch-topic-card${wide ? ' wide' : ''}`}
       onClick={() => onClick(topic)}
       role="button"
       tabIndex={0}
       aria-label={`Read about ${topic.title}`}
-      onKeyDown={(e) => e.key === 'Enter' ? onClick(topic) : null}
+      onKeyDown={(e) => (e.key === 'Enter' ? onClick(topic) : null)}
     >
-      {/* Background gradient — acts as loading placeholder and fallback */}
-      <div
-        className="card-gradient-bg"
-        style={{ background: gradient }}
-        aria-hidden="true"
-      />
+      {/* Top Visual Area: Pexels Photography with Subtle Zoom & Soft Edges */}
+      <div className="arch-card-visual">
+        <div className="card-photo-container" aria-hidden="true">
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              alt=""
+              className={`card-photo-img ${imgLoaded ? 'loaded' : ''}`}
+              loading="lazy"
+              onLoad={() => setImgLoaded(true)}
+            />
+          ) : (
+            <div className="card-photo-fallback-pattern" />
+          )}
+          {/* Subtle perimeter softness vignette — center remains 100% sharp */}
+          <div className="card-photo-vignette" />
+        </div>
+        
+        {/* Floating Bookmark Button on Top-Right */}
+        <button
+          className={`arch-card-bookmark${isSaved ? ' saved' : ''}`}
+          onClick={handleBookmark}
+          aria-label={isSaved ? `Remove bookmark for ${topic.title}` : `Bookmark ${topic.title}`}
+          title={isSaved ? 'Saved to bookmarks' : 'Save topic'}
+        >
+          <Bookmark size={15} fill={isSaved ? 'currentColor' : 'none'} />
+        </button>
+      </div>
 
-      {/* Image layer — fades in once loaded */}
-      {bgImage && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 0, left: 0, right: 0, bottom: 0,
-            backgroundImage: `url(${bgImage})`,
-            backgroundPosition: 'center',
-            backgroundSize: 'cover',
-            opacity: imgLoaded ? 1 : 0,
-            transition: 'opacity 0.6s ease'
-          }}
-          aria-hidden="true"
-        />
-      )}
+      {/* Bottom Content Area: High-Contrast Editorial Typography & Metadata */}
+      <div className="arch-card-content">
+        <h3 className="arch-card-title">{topic.title}</h3>
 
-      {/* Hidden img to detect load completion */}
-      {bgImage && (
-        <img 
-          src={bgImage} 
-          alt="" 
-          style={{ display: 'none' }} 
-          onLoad={() => setImgLoaded(true)} 
-        />
-      )}
-
-      {/* Dark overlay for text legibility */}
-      <div 
-        className="card-overlay" 
-        style={{ 
-          background: bgImage 
-            ? 'linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 40%, rgba(0,0,0,0.4) 100%)' 
-            : undefined 
-        }} 
-        aria-hidden="true" 
-      />
-
-      {/* Content */}
-      <div className="card-content">
-        <h3 className="card-title">{topic.title}</h3>
-        {(topic.description || topic.hook) && (
-          <p className="card-desc">{topic.description || topic.hook}</p>
+        {(topic.description || topic.blurb || topic.hook) && (
+          <p className="arch-card-desc">{topic.description || topic.blurb || topic.hook}</p>
         )}
-        <div className="card-tags" style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap', overflow: 'hidden', marginTop: 'auto', paddingTop: '12px' }}>
-          {(topic.tags || [categoryName]).slice(0, 2).map(tag => (
-            <span key={tag} className="card-tag" style={{ whiteSpace: 'nowrap' }}>{tag}</span>
-          ))}
+
+        <div className="arch-card-footer">
+          <span className="arch-card-tag">{categoryName}</span>
+          {topic.readingTime && (
+            <span className="arch-card-time">{topic.readingTime}</span>
+          )}
         </div>
       </div>
     </article>

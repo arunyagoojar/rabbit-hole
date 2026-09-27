@@ -1,6 +1,15 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import {
+  getAuth,
+  GoogleAuthProvider,
+  OAuthProvider,
+  signInWithPopup,
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile
+} from 'firebase/auth'
 
 const defaultFirebaseConfig = {
   apiKey: 'AIzaSyCVpR6ZatvEi5GlkV612GJGryf_K-plJVw',
@@ -34,17 +43,21 @@ function hasUsableFirebaseConfig(config) {
 
 let app = null
 let auth = null
-let db = null
 let googleProvider = null
+let appleProvider = null
 let firebaseUnavailableReason = ''
 
 if (hasUsableFirebaseConfig(firebaseConfig)) {
   try {
     app = initializeApp(firebaseConfig)
     auth = getAuth(app)
-    db = getFirestore(app)
+
     googleProvider = new GoogleAuthProvider()
     googleProvider.setCustomParameters({ prompt: 'select_account' })
+
+    appleProvider = new OAuthProvider('apple.com')
+    appleProvider.addScope('email')
+    appleProvider.addScope('name')
   } catch (err) {
     firebaseUnavailableReason = err?.message || 'Firebase initialization failed'
     console.error('Firebase is unavailable:', err)
@@ -54,9 +67,17 @@ if (hasUsableFirebaseConfig(firebaseConfig)) {
   console.warn(firebaseUnavailableReason)
 }
 
-export const isFirebaseConfigured = Boolean(app && auth && db && googleProvider)
+export const isFirebaseConfigured = Boolean(app && auth && googleProvider)
 export const firebaseConfigError = firebaseUnavailableReason
-export { auth, db, googleProvider }
-
-export { signInWithPopup, signOut }
+export {
+  auth,
+  googleProvider,
+  appleProvider,
+  signInWithPopup,
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile
+}
 export default app
