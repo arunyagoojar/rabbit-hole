@@ -368,58 +368,6 @@ export function getLastAudioErrorType() {
 }
 
 /**
- * Synthesize speech using open-source Puter.js (AWS Polly / OpenAI backends).
- * Bypasses Google AI Studio rate limits and quotas for keyless guest and user sessions.
- */
-export async function getPuterAudioBuffer(text, audioCtx) {
-  if (typeof window === 'undefined') return null
-
-  // Await Puter script availability if currently initializing
-  if (!window.puter?.ai?.txt2speech) {
-    let waited = 0
-    while (!window.puter?.ai?.txt2speech && waited < 1200) {
-      await new Promise(r => setTimeout(r, 100))
-      waited += 100
-    }
-  }
-
-  if (!window.puter?.ai?.txt2speech) return null
-
-  try {
-    const clean = cleanSpokenText(text)
-    if (!clean) return null
-    const sliced = clean.slice(0, 1500)
-
-    // Puter txt2speech returns an HTMLAudioElement with a blob: URL
-    let audioEl = null
-    try {
-      audioEl = await window.puter.ai.txt2speech(sliced, {
-        engine: 'aws-polly',
-        voice: 'Joanna'
-      })
-    } catch {
-      try {
-        audioEl = await window.puter.ai.txt2speech(sliced)
-      } catch (fallbackErr) {
-        console.warn('Puter standard synthesis fallback:', fallbackErr?.message || fallbackErr)
-      }
-    }
-
-    if (!audioEl || !audioEl.src) return null
-
-    const res = await fetch(audioEl.src)
-    if (!res.ok) return null
-
-    const arrayBuffer = await res.arrayBuffer()
-    const decoded = await audioCtx.decodeAudioData(arrayBuffer.slice(0))
-    return decoded
-  } catch (err) {
-    console.warn('Puter TTS synthesis warning:', err?.message || err)
-    return null
-  }
-}
-
-/**
  * Synthesize or retrieve cached audio buffer for a queue item.
  * Uses deterministic caching and dual-mode PCM/WAV decoding.
  */
@@ -529,12 +477,12 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
         for (let i = 0; i < binary.length; i++) {
           bytes[i] = binary.charCodeAt(i)
         }
-        const isWav = bytes.length > 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
-        if (isWav) {
-          try {
-            buffer = await audioCtx.decodeAudioData(bytes.buffer.slice(0))
-          } catch {}
-        }
+        // First, attempt standard browser decodeAudioData (decodes MP3, WAV, AAC natively)
+        try {
+          buffer = await audioCtx.decodeAudioData(bytes.buffer.slice(0))
+        } catch {}
+
+        // Fallback: parse raw 24kHz 16-bit linear PCM
         if (!buffer) {
           const sampleRate = 24000
           const numSamples = Math.floor(bytes.byteLength / 2)
@@ -552,14 +500,14 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
         const fetchRes = await fetch(audioUrl)
         if (fetchRes.ok) {
           const arrayBuf = await fetchRes.arrayBuffer()
-          const bytes = new Uint8Array(arrayBuf)
-          const isWav = bytes.length > 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
-          if (isWav) {
-            try {
-              buffer = await audioCtx.decodeAudioData(bytes.buffer.slice(0))
-            } catch {}
-          }
+          // First, attempt standard browser decodeAudioData (decodes MP3, WAV, AAC natively)
+          try {
+            buffer = await audioCtx.decodeAudioData(arrayBuf.slice(0))
+          } catch {}
+
+          // Fallback: parse raw 24kHz 16-bit linear PCM
           if (!buffer) {
+            const bytes = new Uint8Array(arrayBuf)
             const sampleRate = 24000
             const numSamples = Math.floor(bytes.byteLength / 2)
             if (numSamples > 0) {
@@ -575,18 +523,6 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
         }
       }
 
-      // 4. Open-source Puter.js fallback for free neural speech without Google quota limits
-      if (!buffer) {
-        try {
-          const puterBuffer = await getPuterAudioBuffer(clean, audioCtx)
-          if (puterBuffer) {
-            buffer = puterBuffer
-            lastAudioErrorType = null
-          }
-        } catch (puterErr) {
-          console.warn('Puter TTS fallback notice:', puterErr?.message || puterErr)
-        }
-      }
 
       if (buffer) {
         audioBufferCache.set(cacheKey, buffer)

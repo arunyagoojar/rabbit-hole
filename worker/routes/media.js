@@ -264,6 +264,64 @@ mediaRoutes.post('/narrate', optionalAuth(), async (c) => {
     if (audioBase64) break
   }
 
+  // 2.2 Cloudflare Workers AI TTS Fallback (Native, keyless, zero-login, runs on Cloudflare Edge)
+  if (!audioBase64 && c.env.AI) {
+    // Attempt 1: Deepgram Aura-2 (English)
+    try {
+      const auraRes = await c.env.AI.run('@cf/deepgram/aura-2-en', {
+        text: cleanText.slice(0, 1000),
+        speaker: 'luna',
+        encoding: 'mp3'
+      })
+      if (auraRes) {
+        let arrayBuf = null
+        if (auraRes instanceof ArrayBuffer) {
+          arrayBuf = auraRes
+        } else if (auraRes instanceof ReadableStream || (auraRes && typeof auraRes.getReader === 'function')) {
+          arrayBuf = await new Response(auraRes).arrayBuffer()
+        } else if (auraRes.arrayBuffer) {
+          arrayBuf = await auraRes.arrayBuffer()
+        }
+        if (arrayBuf && arrayBuf.byteLength > 100) {
+          audioBase64 = uint8ArrayToBase64(new Uint8Array(arrayBuf))
+          audioMime = 'audio/mpeg'
+        }
+      }
+    } catch (auraErr) {
+      console.warn('Workers AI Aura-2 notice:', auraErr?.message || auraErr)
+    }
+
+    // Attempt 2: MeloTTS
+    if (!audioBase64) {
+      try {
+        const meloRes = await c.env.AI.run('@cf/myshell-ai/melotts', {
+          prompt: cleanText.slice(0, 1000),
+          lang: 'en'
+        })
+        if (meloRes) {
+          if (typeof meloRes.audio === 'string' && meloRes.audio.length > 50) {
+            audioBase64 = meloRes.audio
+            audioMime = 'audio/mpeg'
+          } else {
+            let arrayBuf = null
+            if (meloRes instanceof ArrayBuffer) arrayBuf = meloRes
+            else if (meloRes instanceof ReadableStream || (meloRes && typeof meloRes.getReader === 'function')) {
+              arrayBuf = await new Response(meloRes).arrayBuffer()
+            } else if (meloRes.arrayBuffer) {
+              arrayBuf = await meloRes.arrayBuffer()
+            }
+            if (arrayBuf && arrayBuf.byteLength > 100) {
+              audioBase64 = uint8ArrayToBase64(new Uint8Array(arrayBuf))
+              audioMime = 'audio/mpeg'
+            }
+          }
+        }
+      } catch (meloErr) {
+        console.warn('Workers AI MeloTTS notice:', meloErr?.message || meloErr)
+      }
+    }
+  }
+
   if (!audioBase64) {
     const isQuota = Boolean(
       lastError?.message && (
@@ -281,18 +339,19 @@ mediaRoutes.post('/narrate', optionalAuth(), async (c) => {
   }
 
   try {
-    // 3. Format audio (use direct WAV from Gemini 3.8 or wrap PCM in WAV)
+    // 3. Format audio (use direct WAV/MP3 or wrap raw PCM in WAV)
     const rawBytes = base64ToUint8Array(audioBase64)
-    const wavBytes = (audioMime && audioMime.toLowerCase().includes('wav'))
-      ? rawBytes
-      : pcmToWav(rawBytes, 24000, 1, 16)
+    const isWav = Boolean(audioMime && audioMime.toLowerCase().includes('wav'))
+    const isMp3 = Boolean(audioMime && (audioMime.toLowerCase().includes('mpeg') || audioMime.toLowerCase().includes('mp3')))
+    const outputBytes = (isWav || isMp3) ? rawBytes : pcmToWav(rawBytes, 24000, 1, 16)
+    const finalContentType = isMp3 ? 'audio/mpeg' : 'audio/wav'
 
-    const finalBase64 = uint8ArrayToBase64(wavBytes)
+    const finalBase64 = uint8ArrayToBase64(outputBytes)
 
     // 4. Save into Cloudflare R2
     if (bucket) {
-      await bucket.put(r2Key, wavBytes, {
-        httpMetadata: { contentType: 'audio/wav' }
+      await bucket.put(r2Key, outputBytes, {
+        httpMetadata: { contentType: finalContentType }
       })
     }
 
