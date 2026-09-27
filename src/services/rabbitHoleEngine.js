@@ -411,7 +411,13 @@ export async function getOrPrefetchAudioBuffer(queueItem, topicId, audioCtx) {
           import.meta.env.VITE_GEMINI_API_KEY,
           import.meta.env.VITE_GEMINI_API_KEY_SECONDARY
         ].filter(k => Boolean(k) && k.trim().length > 10)
-        const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-preview-tts']
+        const models = [
+          'gemini-3.8-flash-tts',
+          'gemini-3.8-flash-lite-tts',
+          'gemini-2.5-flash-preview-tts',
+          'gemini-3.1-flash-tts-preview',
+          'gemini-2.5-flash'
+        ]
         for (const k of keys) {
           for (const m of models) {
             try {
@@ -566,7 +572,17 @@ export function generateSubtitleCues(text, durationSec) {
 
   const validPhrases = phrases.filter(p => p.trim().length > 0)
   if (validPhrases.length === 0) {
-    return [{ text: clean, start: 0.1, end: Math.max(0.6, durationSec - 0.1) }]
+    const fallbackWords = clean.split(/\s+/).filter(Boolean)
+    const chunks = []
+    for (let i = 0; i < fallbackWords.length; i += 6) {
+      chunks.push(fallbackWords.slice(i, i + 6).join(' '))
+    }
+    const chunkDur = durationSec / Math.max(1, chunks.length)
+    return chunks.map((chunk, idx) => ({
+      text: chunk,
+      start: idx * chunkDur,
+      end: (idx + 1) * chunkDur
+    }))
   }
 
   const wordCounts = validPhrases.map(p => p.split(/\s+/).length)

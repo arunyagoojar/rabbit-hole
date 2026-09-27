@@ -91,8 +91,8 @@ function writeLocalStorage(data) {
   localStorage.setItem('rh-history', JSON.stringify(data.readHistory || {}))
   localStorage.setItem('rh-schema-version', String(data.schemaVersion || 2))
   localStorage.setItem('rh-onboarded', data.onboarded ? '1' : '0')
-  if (data.geminiApiKey !== undefined) {
-    localStorage.setItem('rh-gemini-api-key', data.geminiApiKey || '')
+  if (typeof data.geminiApiKey === 'string' && data.geminiApiKey.trim().length > 0) {
+    localStorage.setItem('rh-gemini-api-key', data.geminiApiKey.trim())
   }
 }
 
@@ -116,6 +116,8 @@ export function AuthProvider({ children }) {
 
     try {
       const currentLocal = readLocalStorage()
+      const currentStoredKey = (localStorage.getItem('rh-gemini-api-key') || '').trim()
+      
       // Call Cloudflare Worker sync endpoint (verified with Firebase JWT)
       const { user: backendUser } = await apiClient.syncAuth({
         displayName: firebaseUser.displayName,
@@ -125,7 +127,8 @@ export function AuthProvider({ children }) {
         lastReadDate: currentLocal.lastReadDate,
         interests: currentLocal.interests,
         savedIds: currentLocal.savedIds,
-        onboarded: currentLocal.onboarded
+        onboarded: currentLocal.onboarded,
+        geminiApiKey: currentStoredKey || currentLocal.geminiApiKey || undefined
       })
 
       // Fetch persistent sessions history from D1
@@ -137,7 +140,13 @@ export function AuthProvider({ children }) {
         const mergedSaved = Array.from(new Set([...(backendUser?.savedIds || []), ...prev.savedIds]))
         const mergedHistory = { ...(backendHistory || {}), ...(prev.readHistory || {}) }
         const mergedStreak = Math.max(d1Streak || 0, prev.streak || 0)
-        const mergedApiKey = backendUser?.geminiApiKey || backendUser?.gemini_api_key || prev.geminiApiKey || ''
+        
+        // Priority: local stored key || backend returned key || previous state key
+        const resolvedApiKey = currentStoredKey || (backendUser?.geminiApiKey || backendUser?.gemini_api_key || '').trim() || prev.geminiApiKey || ''
+
+        if (resolvedApiKey) {
+          localStorage.setItem('rh-gemini-api-key', resolvedApiKey)
+        }
 
         const next = {
           ...prev,
@@ -145,7 +154,7 @@ export function AuthProvider({ children }) {
           savedIds: mergedSaved,
           theme: backendUser?.theme || prev.theme,
           onboarded: backendUser?.onboarded === true || prev.onboarded,
-          geminiApiKey: mergedApiKey,
+          geminiApiKey: resolvedApiKey,
           streak: mergedStreak,
           lastReadDate: d1LastRead || prev.lastReadDate,
           readHistory: mergedHistory
@@ -347,7 +356,11 @@ export function AuthProvider({ children }) {
     const cleanKey = String(key || '').trim()
     updateLocalData(prev => ({ ...prev, geminiApiKey: cleanKey }))
     try {
-      localStorage.setItem('rh-gemini-api-key', cleanKey)
+      if (cleanKey) {
+        localStorage.setItem('rh-gemini-api-key', cleanKey)
+      } else {
+        localStorage.removeItem('rh-gemini-api-key')
+      }
     } catch {}
 
     if (user) {

@@ -6,7 +6,15 @@ import { apiClient } from './apiClient.js'
  * Supports Azure AI Foundry, classic Azure OpenAI, and Gemini as a fallback.
  */
 
-const MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+const MODEL_CANDIDATES = [
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-flash-latest'
+]
 const GEMINI_API_BASE = '/api/gemini'
 const AZURE_OPENAI_API_VERSION = import.meta.env.VITE_AZURE_OPENAI_API_VERSION || '2024-10-21'
 const AZURE_OPENAI_BASE = '/api/azure-openai'

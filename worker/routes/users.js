@@ -67,8 +67,11 @@ userRoutes.patch('/me', async (c) => {
     values.push(body.lastReadDate)
   }
   if (body.geminiApiKey !== undefined) {
-    fields.push('gemini_api_key = ?')
-    values.push(body.geminiApiKey)
+    const cleanKey = typeof body.geminiApiKey === 'string' ? body.geminiApiKey.trim() : ''
+    if (cleanKey.length > 0) {
+      fields.push('gemini_api_key = ?')
+      values.push(cleanKey)
+    }
   }
 
   if (fields.length === 0) {

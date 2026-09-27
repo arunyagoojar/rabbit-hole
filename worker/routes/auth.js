@@ -27,7 +27,8 @@ authRoutes.post('/sync', async (c) => {
     'SELECT * FROM users WHERE id = ?'
   ).bind(user.uid).first()
 
-  const apiKey = body.geminiApiKey || body.gemini_api_key || null
+  const incomingRawKey = typeof body.geminiApiKey === 'string' ? body.geminiApiKey.trim() : (typeof body.gemini_api_key === 'string' ? body.gemini_api_key.trim() : '')
+  const validApiKey = incomingRawKey.length > 5 ? incomingRawKey : null
 
   if (!existingUser) {
     // New user in D1
@@ -48,7 +49,7 @@ authRoutes.post('/sync', async (c) => {
       lastReadDate,
       theme,
       onboarded,
-      apiKey,
+      validApiKey,
       now,
       now
     ).run()
@@ -79,23 +80,27 @@ authRoutes.post('/sync', async (c) => {
       }
     }
   } else {
-    // Existing user: update name/email/avatar/apiKey if changed
-    await db.prepare(`
-      UPDATE users
-      SET email = COALESCE(?, email),
-          display_name = COALESCE(?, display_name),
-          photo_url = COALESCE(?, photo_url),
-          gemini_api_key = COALESCE(?, gemini_api_key),
-          updated_at = ?
-      WHERE id = ?
-    `).bind(
+    // Existing user: update name/email/avatar, and update apiKey only if provided non-empty
+    const fields = [
+      'email = COALESCE(?, email)',
+      'display_name = COALESCE(?, display_name)',
+      'photo_url = COALESCE(?, photo_url)',
+      'updated_at = ?'
+    ]
+    const values = [
       user.email || null,
       user.name || null,
       user.picture || null,
-      apiKey,
-      now,
-      user.uid
-    ).run()
+      now
+    ]
+
+    if (validApiKey) {
+      fields.push('gemini_api_key = ?')
+      values.push(validApiKey)
+    }
+
+    values.push(user.uid)
+    await db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run()
 
     // Merge incoming saved topics or interests if provided
     if (Array.isArray(body.interests) && body.interests.length > 0) {
@@ -128,10 +133,12 @@ authRoutes.post('/sync', async (c) => {
     'SELECT topic_id FROM saved_topics WHERE user_id = ?'
   ).bind(user.uid).all()
 
+  const userKey = fullUser?.gemini_api_key || validApiKey || ''
+
   return c.json({
     user: {
       ...fullUser,
-      geminiApiKey: fullUser?.gemini_api_key || '',
+      geminiApiKey: userKey,
       onboarded: fullUser?.onboarded === 1,
       interests: (interestsResult || []).map(r => r.interest_id),
       savedIds: (savedResult || []).map(r => r.topic_id)

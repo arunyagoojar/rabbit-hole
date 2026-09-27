@@ -7,7 +7,9 @@ import {
   Pause, 
   RotateCcw,
   Plus,
-  Send
+  Send,
+  AlertCircle,
+  X
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '../contexts/AuthContext'
@@ -72,13 +74,12 @@ export default function ReadingOverlay({
 
   const audioCtxRef = useRef(null)
   const activeSourceRef = useRef(null)
-  const activeUtteranceRef = useRef(null)
-  const isSpeechSynthesisRef = useRef(false)
   const currentUnitIndexRef = useRef(0)
   const isPlayingRef = useRef(false)
   const playbackQueueRef = useRef([])
   const pausedOffsetRef = useRef(0)
   const currentChunkStartTimeRef = useRef(0)
+  const [audioError, setAudioError] = useState('')
 
   // Reading scroll progress
   const [scrollProgress, setScrollProgress] = useState(0)
@@ -125,11 +126,6 @@ export default function ReadingOverlay({
       } catch {}
       activeSourceRef.current = null
     }
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel()
-    }
-    activeUtteranceRef.current = null
-    isSpeechSynthesisRef.current = false
     isPlayingRef.current = false
     setPlaybackState(prev => ({
       ...prev,
@@ -141,20 +137,16 @@ export default function ReadingOverlay({
 
   // Pause narration while preserving playback position
   const pauseAudio = useCallback(() => {
-    if (isSpeechSynthesisRef.current && typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.pause()
-    } else {
-      const ctx = audioCtxRef.current
-      if (ctx && currentChunkStartTimeRef.current > 0) {
-        pausedOffsetRef.current = Math.max(0, ctx.currentTime - currentChunkStartTimeRef.current)
-      }
-      if (activeSourceRef.current) {
-        try {
-          activeSourceRef.current.stop()
-          activeSourceRef.current.disconnect()
-        } catch {}
-        activeSourceRef.current = null
-      }
+    const ctx = audioCtxRef.current
+    if (ctx && currentChunkStartTimeRef.current > 0) {
+      pausedOffsetRef.current = Math.max(0, ctx.currentTime - currentChunkStartTimeRef.current)
+    }
+    if (activeSourceRef.current) {
+      try {
+        activeSourceRef.current.stop()
+        activeSourceRef.current.disconnect()
+      } catch {}
+      activeSourceRef.current = null
     }
     isPlayingRef.current = false
     setPlaybackState(prev => ({
@@ -219,55 +211,11 @@ export default function ReadingOverlay({
     prefetchAudioAhead(queue, index, topic.id, ctx)
 
     try {
+      setAudioError('')
       const buffer = await getOrPrefetchAudioBuffer(item, topic.id, ctx)
       if (!buffer) {
-        // Fallback to browser SpeechSynthesis when cloud TTS quota is exhausted
-        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-          window.speechSynthesis.cancel()
-          const cleanText = cleanSpokenText(item.text)
-          const utterance = new SpeechSynthesisUtterance(cleanText)
-          utterance.rate = 1.0
-          utterance.pitch = 1.0
-
-          const voices = window.speechSynthesis.getVoices()
-          const enVoice = voices.find(v => v.lang && v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Daniel') || v.name.includes('Samantha') || v.name.includes('Google') || v.name.includes('Karen') || v.name.includes('Alex'))) || voices.find(v => v.lang && v.lang.startsWith('en'))
-          if (enVoice) utterance.voice = enVoice
-
-          setPlaybackState(prev => ({ ...prev, isPreparing: false }))
-          isSpeechSynthesisRef.current = true
-
-          // Scroll active section into view
-          if (containerRef.current && (item.unitId || item.sectionId)) {
-            const targetId = item.unitId || item.sectionId
-            const activeEl = containerRef.current.querySelector(`[data-section-id="${targetId}"]`)
-            if (activeEl) {
-              activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-            }
-          }
-
-          utterance.onend = () => {
-            isSpeechSynthesisRef.current = false
-            if (isPlayingRef.current) {
-              setTimeout(() => {
-                if (isPlayingRef.current) {
-                  playQueueItem(queue, index + 1, 0)
-                }
-              }, 350)
-            }
-          }
-
-          utterance.onerror = (e) => {
-            console.warn('SpeechSynthesis error:', e)
-            if (isPlayingRef.current) {
-              stopAudio()
-            }
-          }
-
-          activeUtteranceRef.current = utterance
-          window.speechSynthesis.speak(utterance)
-          return
-        }
-
+        console.warn('Neural voice narration could not be generated for item:', item.id)
+        setAudioError('Neural voice narration could not be loaded. Please check your Google AI key.')
         stopAudio()
         return
       }
@@ -339,12 +287,6 @@ export default function ReadingOverlay({
     }
 
     if (playbackState.isPaused) {
-      if (isSpeechSynthesisRef.current && typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.paused) {
-        window.speechSynthesis.resume()
-        isPlayingRef.current = true
-        setPlaybackState(prev => ({ ...prev, isPlaying: true, isPaused: false }))
-        return
-      }
       isPlayingRef.current = true
       setPlaybackState(prev => ({ ...prev, isPlaying: true, isPaused: false }))
       playQueueItem(playbackQueueRef.current, currentUnitIndexRef.current, pausedOffsetRef.current)
@@ -573,6 +515,35 @@ export default function ReadingOverlay({
                 >
                   <RotateCcw size={14} />
                   <span>Retry</span>
+                </button>
+              </div>
+            )}
+
+            {audioError && (
+              <div 
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(234, 67, 53, 0.1)',
+                  border: '1px solid rgba(234, 67, 53, 0.25)',
+                  color: '#EA4335',
+                  fontSize: '13px',
+                  marginBottom: '20px'
+                }} 
+                role="alert"
+              >
+                <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>{audioError}</span>
+                <button
+                  type="button"
+                  onClick={() => setAudioError('')}
+                  style={{ background: 'none', border: 'none', color: '#EA4335', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                  aria-label="Dismiss error"
+                >
+                  <X size={14} />
                 </button>
               </div>
             )}

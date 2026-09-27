@@ -198,9 +198,11 @@ mediaRoutes.post('/narrate', optionalAuth(), async (c) => {
   let lastError = null
 
   const modelsToTry = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-2.5-flash-preview-tts'
+    'gemini-3.8-flash-tts',
+    'gemini-3.8-flash-lite-tts',
+    'gemini-2.5-flash-preview-tts',
+    'gemini-3.1-flash-tts-preview',
+    'gemini-2.5-flash'
   ]
 
   // Ensure voice is one of Gemini's prebuilt voices: Aoede, Puck, Charon, Kore, Fenrir

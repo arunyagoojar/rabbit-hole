@@ -40,6 +40,17 @@ const HUMAN_AUDIO_STATES = {
 }
 
 /**
+ * Ensures audio subtitles always remain short, concise spoken cues (~4-6 words)
+ * and never dump full paragraphs or large text blocks.
+ */
+function formatSubtitleCue(text) {
+  if (!text || typeof text !== 'string') return ''
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (words.length <= 7) return words.join(' ')
+  return words.slice(0, 6).join(' ') + '...'
+}
+
+/**
  * AudioOnlyPlayer — Editorial Curiosity Listening Journey
  * 
  * Features:
@@ -90,8 +101,6 @@ export default function AudioOnlyPlayer({
   // Audio References
   const audioCtxRef = useRef(null)
   const activeSourceRef = useRef(null)
-  const activeUtteranceRef = useRef(null)
-  const isSpeechSynthesisRef = useRef(false)
   const analyserRef = useRef(null)
   const rafLevelRef = useRef(null)
   const levelRef = useRef(-1)
@@ -153,11 +162,6 @@ export default function AudioOnlyPlayer({
       } catch {}
       activeSourceRef.current = null
     }
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel()
-    }
-    activeUtteranceRef.current = null
-    isSpeechSynthesisRef.current = false
     if (subtitleTimerRef.current) {
       clearInterval(subtitleTimerRef.current)
       subtitleTimerRef.current = null
@@ -234,89 +238,9 @@ export default function AudioOnlyPlayer({
     try {
       const buffer = await getOrPrefetchAudioBuffer(item, topic.id, ctx)
       if (!buffer) {
-        // Fallback to browser SpeechSynthesis when cloud TTS quota is exhausted
-        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-          window.speechSynthesis.cancel()
-          const cleanText = cleanSpokenText(item.text)
-          const utterance = new SpeechSynthesisUtterance(cleanText)
-          utterance.rate = 1.0
-          utterance.pitch = 1.0
-
-          const voices = window.speechSynthesis.getVoices()
-          const enVoice = voices.find(v => v.lang && v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Daniel') || v.name.includes('Samantha') || v.name.includes('Google') || v.name.includes('Karen') || v.name.includes('Alex'))) || voices.find(v => v.lang && v.lang.startsWith('en'))
-          if (enVoice) utterance.voice = enVoice
-
-          setAudioState('speaking')
-          setIsPlaying(true)
-          isPlayingRef.current = true
-          isSpeechSynthesisRef.current = true
-
-          // Subtitle phrase cues
-          const words = cleanText.split(/\s+/).filter(Boolean)
-          const estDurationSec = Math.max(3, words.length / 2.6)
-          const cues = generateSubtitleCues(item.text, estDurationSec)
-          currentCuesRef.current = cues
-          if (cues[0]) setCurrentSubtitle(cues[0].text)
-
-          const startTime = Date.now()
-          subtitleTimerRef.current = setInterval(() => {
-            if (!isPlayingRef.current) return
-            const elapsedSec = (Date.now() - startTime) / 1000
-            const activeCue = currentCuesRef.current.find(
-              c => elapsedSec >= c.start && elapsedSec <= c.end
-            )
-            if (activeCue && activeCue.text !== currentSubtitle) {
-              setCurrentSubtitle(activeCue.text)
-            }
-          }, 90)
-
-          const animateSpeechLevel = () => {
-            if (!isPlayingRef.current) {
-              levelRef.current = -1
-              return
-            }
-            levelRef.current = 0.35 + Math.sin(Date.now() / 140) * 0.22 + Math.random() * 0.12
-            rafLevelRef.current = requestAnimationFrame(animateSpeechLevel)
-          }
-          rafLevelRef.current = requestAnimationFrame(animateSpeechLevel)
-
-          utterance.onend = () => {
-            if (subtitleTimerRef.current) {
-              clearInterval(subtitleTimerRef.current)
-              subtitleTimerRef.current = null
-            }
-            if (rafLevelRef.current) {
-              cancelAnimationFrame(rafLevelRef.current)
-              rafLevelRef.current = null
-            }
-            levelRef.current = -1
-            isSpeechSynthesisRef.current = false
-
-            if (isPlayingRef.current) {
-              setTimeout(() => {
-                if (isPlayingRef.current) {
-                  playQueueItem(index + 1, 0, queue)
-                }
-              }, 500)
-            }
-          }
-
-          utterance.onerror = (e) => {
-            console.warn('SpeechSynthesis error:', e)
-            if (isPlayingRef.current) {
-              setPlaybackError("Something went wrong")
-              setAudioState('error')
-              stopAudio()
-            }
-          }
-
-          activeUtteranceRef.current = utterance
-          window.speechSynthesis.speak(utterance)
-          return
-        }
-
+        console.warn('Neural voice narration buffer is unavailable for item:', item.id)
         if (isPlayingRef.current) {
-          setPlaybackError("Something went wrong")
+          setPlaybackError('Neural voice narration could not be loaded. Please check your Google AI key in settings.')
           setAudioState('error')
           stopAudio()
         }
@@ -362,7 +286,7 @@ export default function AudioOnlyPlayer({
 
       const initialCue = cues.find(c => startOffsetSec >= c.start && startOffsetSec <= c.end) || cues[0]
       if (initialCue) {
-        setCurrentSubtitle(initialCue.text)
+        setCurrentSubtitle(formatSubtitleCue(initialCue.text))
       }
 
       subtitleTimerRef.current = setInterval(() => {
@@ -371,8 +295,11 @@ export default function AudioOnlyPlayer({
         const activeCue = currentCuesRef.current.find(
           c => currentPlaybackSec >= c.start && currentPlaybackSec <= c.end
         )
-        if (activeCue && activeCue.text !== currentSubtitle) {
-          setCurrentSubtitle(activeCue.text)
+        if (activeCue) {
+          const formatted = formatSubtitleCue(activeCue.text)
+          if (formatted && formatted !== currentSubtitle) {
+            setCurrentSubtitle(formatted)
+          }
         }
       }, 90)
 
@@ -420,26 +347,15 @@ export default function AudioOnlyPlayer({
     }
 
     if (isPlaying) {
-      if (isSpeechSynthesisRef.current && typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.pause()
-      } else {
-        const ctx = audioCtxRef.current
-        if (ctx && currentChunkStartTimeRef.current > 0) {
-          pausedOffsetRef.current = Math.max(0, ctx.currentTime - currentChunkStartTimeRef.current)
-        }
+      const ctx = audioCtxRef.current
+      if (ctx && currentChunkStartTimeRef.current > 0) {
+        pausedOffsetRef.current = Math.max(0, ctx.currentTime - currentChunkStartTimeRef.current)
       }
       stopAudio()
       setAudioState('paused')
     } else {
       if (playbackError) {
         setPlaybackError(null)
-      }
-      if (isSpeechSynthesisRef.current && typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.paused) {
-        window.speechSynthesis.resume()
-        setIsPlaying(true)
-        isPlayingRef.current = true
-        setAudioState('speaking')
-        return
       }
       const targetIdx = audioState === 'finished' ? 0 : currentQueueIndex
       const offset = audioState === 'finished' ? 0 : pausedOffsetRef.current
@@ -509,9 +425,8 @@ export default function AudioOnlyPlayer({
       const targetIdx = newQueue.findIndex(item => item.threadId === newThread.id)
       const playIdx = targetIdx !== -1 ? targetIdx : newQueue.length - 1
 
-      // 7. Show generated prose immediately in subtitle quote
-      const firstPara = newThread.paragraphs[0] || '...'
-      setCurrentSubtitle(firstPara)
+      // 7. Keep subtitle minimal while neural voice synthesizes
+      setCurrentSubtitle('...')
 
       // 8. Eagerly send to TTS and begin playback as soon as playable
       pausedOffsetRef.current = 0
@@ -665,7 +580,7 @@ export default function AudioOnlyPlayer({
                     Try again
                   </button>
                 </motion.div>
-              ) : currentSubtitle && (isPlaying || audioState === 'speaking' || audioState === 'thinking') ? (
+              ) : currentSubtitle && (isPlaying || audioState === 'speaking' || audioState === 'thinking' || audioState === 'connecting') ? (
                 <motion.p 
                   key={currentSubtitle}
                   initial={{ opacity: 0, y: 6 }}
@@ -674,7 +589,7 @@ export default function AudioOnlyPlayer({
                   transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                   className="audio-quote-subtitle"
                 >
-                  {audioState === 'thinking' ? '...' : `“${currentSubtitle}”`}
+                  {audioState === 'thinking' || audioState === 'connecting' ? '...' : `“${formatSubtitleCue(currentSubtitle)}”`}
                 </motion.p>
               ) : (
                 <motion.p 

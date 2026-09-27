@@ -31,11 +31,11 @@ export default function ApiKeyModal({ isOpen, onClose }) {
     setTestResult(null)
 
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash?key=${encodeURIComponent(key)}`)
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`)
       if (res.ok) {
         setTestResult({
           valid: true,
-          message: 'Key successfully verified! Ready for real-time text & voice narration.'
+          message: 'Key successfully verified with Google AI! Ready for real-time text & voice narration.'
         })
       } else {
         const errorData = await res.json().catch(() => null)
